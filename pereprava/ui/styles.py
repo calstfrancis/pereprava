@@ -29,6 +29,13 @@ CSS = """
     padding-top: 6px;
     padding-bottom: 6px;
 }
+.status-toggle {
+    opacity: 0.7;
+}
+.status-toggle:hover,
+.status-toggle:focus {
+    opacity: 1;
+}
 """
 
 

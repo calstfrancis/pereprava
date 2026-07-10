@@ -8,13 +8,23 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk
 
+from pereprava import __version__ as _APP_VERSION
 from pereprava.logic import actions, discovery
+from pereprava.ui.changelog_view import show_changelog
 from pereprava.ui.job_form import JobFormDialog
 from pereprava.ui.job_row import build_discrepancy_row, build_job_row
 from pereprava.ui.log_view import LogViewDialog
 from pereprava.storage.jobs_store import load_job
 
 REFRESH_INTERVAL_SECONDS = 8
+
+
+def _set_toggle_label(button: Gtk.Button, name: str, active: bool) -> None:
+    """Name-as-label toggle: state shown by font weight alone, not an icon/switch."""
+    label = button.get_child()
+    if isinstance(label, Gtk.Label):
+        label.set_markup(f"<b>{name}</b>" if active else name)
+    button.update_state([Gtk.AccessibleState.PRESSED], [active])
 
 
 class AppWindow(Adw.ApplicationWindow):
@@ -24,6 +34,7 @@ class AppWindow(Adw.ApplicationWindow):
         self.set_default_size(760, 600)
 
         self._is_active = True
+        self._auto_refresh_enabled = True
         self.connect("notify::is-active", self._on_is_active_changed)
 
         self._toast_overlay = Adw.ToastOverlay()
@@ -71,6 +82,37 @@ class AppWindow(Adw.ApplicationWindow):
         scrolled.set_child(self._list_box)
         self._stack.add_named(scrolled, "list")
 
+        status_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        status_bar.set_margin_start(12)
+        status_bar.set_margin_end(12)
+        status_bar.set_margin_top(4)
+        status_bar.set_margin_bottom(4)
+
+        self._auto_refresh_btn = Gtk.Button()
+        self._auto_refresh_btn.set_child(Gtk.Label(label="auto-refresh"))
+        self._auto_refresh_btn.add_css_class("flat")
+        self._auto_refresh_btn.add_css_class("status-toggle")
+        self._auto_refresh_btn.set_tooltip_text(
+            "Automatically refresh job status every 8 seconds while the window is focused"
+        )
+        self._auto_refresh_btn.connect("clicked", self._on_auto_refresh_clicked)
+        _set_toggle_label(self._auto_refresh_btn, "auto-refresh", self._auto_refresh_enabled)
+        status_bar.append(self._auto_refresh_btn)
+
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        status_bar.append(spacer)
+
+        version_btn = Gtk.Button(label=f"v{_APP_VERSION}")
+        version_btn.add_css_class("flat")
+        version_btn.add_css_class("dim-label")
+        version_btn.add_css_class("caption")
+        version_btn.set_tooltip_text("View changelog")
+        version_btn.connect("clicked", lambda _b: show_changelog(self, _APP_VERSION))
+        status_bar.append(version_btn)
+
+        toolbar_view.add_bottom_bar(status_bar)
+
         self.refresh()
         GLib.timeout_add_seconds(REFRESH_INTERVAL_SECONDS, self._on_refresh_tick)
 
@@ -78,9 +120,13 @@ class AppWindow(Adw.ApplicationWindow):
         self._is_active = self.is_active()
 
     def _on_refresh_tick(self) -> bool:
-        if self._is_active:
+        if self._is_active and self._auto_refresh_enabled:
             self.refresh()
         return True  # keep the timeout registered
+
+    def _on_auto_refresh_clicked(self, _button) -> None:
+        self._auto_refresh_enabled = not self._auto_refresh_enabled
+        _set_toggle_label(self._auto_refresh_btn, "auto-refresh", self._auto_refresh_enabled)
 
     def refresh(self) -> None:
         entries, discrepancies = discovery.scan()
