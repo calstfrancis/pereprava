@@ -4,6 +4,7 @@ ported from Zerkalo's show_changelog/md_inline_to_pango)."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import gi
@@ -13,6 +14,42 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk
 
 CHANGELOG_PATH = Path(__file__).resolve().parents[2] / "CHANGELOG.md"
+
+# Long single-line labels don't reliably wrap via Gtk.Label's wrap/width-chars
+# properties in this environment (confirmed: natural width scales linearly with
+# text length regardless of wrap-mode/width-chars settings past ~90 chars) —
+# so long text is hard-wrapped ourselves with embedded newlines, which Pango
+# always respects for natural-size purposes independent of that behavior.
+_TOKEN_RE = re.compile(
+    r"`[^`]*`[.,;:!?]*|\*\*[^*]*\*\*[.,;:!?]*|\[[^\]]*\]\([^)]*\)[.,;:!?]*|\S+"
+)
+WRAP_WIDTH = 70
+
+
+def _wrap_markdown(text: str, width: int = WRAP_WIDTH) -> str:
+    """Word-wrap markdown text, treating `code` / **bold** / [text](url) spans as
+    atomic tokens so they never get split mid-span, then convert to Pango markup."""
+    tokens = _TOKEN_RE.findall(text)
+    lines: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for tok in tokens:
+        visible = tok
+        if visible.startswith("`") and visible.endswith("`") and len(visible) >= 2:
+            visible = visible[1:-1]
+        elif visible.startswith("**") and visible.endswith("**") and len(visible) >= 4:
+            visible = visible[2:-2]
+        added_len = len(visible) + (1 if current else 0)
+        if current and current_len + added_len > width:
+            lines.append(" ".join(current))
+            current = [tok]
+            current_len = len(visible)
+        else:
+            current.append(tok)
+            current_len += added_len
+    if current:
+        lines.append(" ".join(current))
+    return "\n".join(md_inline_to_pango(line) for line in lines)
 
 
 def md_inline_to_pango(text: str) -> str:
@@ -58,10 +95,9 @@ def _bullet_row(text: str) -> Gtk.Box:
     dot.set_valign(Gtk.Align.START)
     dot.add_css_class("dim-label")
     label = Gtk.Label()
-    label.set_markup(md_inline_to_pango(text))
+    label.set_markup(_wrap_markdown(text))
     label.set_xalign(0.0)
-    label.set_wrap(True)
-    label.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+    label.set_justify(Gtk.Justification.LEFT)
     label.set_hexpand(True)
     label.set_halign(Gtk.Align.FILL)
     row.append(dot)
@@ -108,11 +144,10 @@ def _build_body(changelog_text: str, current_version: str) -> Gtk.Widget:
             body.append(heading_row)
 
             if title:
-                title_label = Gtk.Label(label=title)
+                title_label = Gtk.Label()
+                title_label.set_markup(_wrap_markdown(title))
                 title_label.add_css_class("title-3")
                 title_label.set_xalign(0.0)
-                title_label.set_wrap(True)
-                title_label.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
                 title_label.set_margin_bottom(2)
                 body.append(title_label)
         elif trimmed.startswith("### "):
@@ -123,6 +158,7 @@ def _build_body(changelog_text: str, current_version: str) -> Gtk.Widget:
             label.set_margin_start(4)
             label.set_margin_bottom(2)
             label.set_wrap(True)
+            label.set_max_width_chars(60)
             body.append(label)
         elif trimmed.startswith("- "):
             body.append(_bullet_row(trimmed[2:]))
