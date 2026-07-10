@@ -1,0 +1,41 @@
+Metadata-Version: 2.4
+Name: pereprava
+Version: 0.1.0
+Summary: Pereprava — a dashboard for rclone/rsync backup jobs run via systemd --user
+Author: Cal
+License: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+
+# Pereprava
+
+A small GTK4/libadwaita dashboard for rclone/rsync backup jobs run as `systemd --user`
+timers. Shows all your backup jobs at a glance — last run, next run, success/failure —
+and lets you create/edit them through a form instead of hand-writing systemd units.
+
+**Safety first:** non-destructive `rclone copy` is the default job type. Anything that
+*can* delete files at its destination (`rclone sync`, `rclone bisync`, `rsync --delete`,
+or a custom command) is flagged loudly in the UI and requires an explicit
+acknowledgment before it can be saved.
+
+## Running
+
+```sh
+./install.sh
+pereprava
+# or, without installing:
+python -m venv .venv && .venv/bin/pip install -e . && .venv/bin/pereprava
+```
+
+- Job definitions: `~/.config/pereprava/jobs/<slug>.json` (source of truth)
+- Generated systemd units: `~/.config/systemd/user/pereprava-job-<slug>.{service,timer}`
+  (regenerated from the JSON on every change — never hand-edit these)
+- Logs: `~/.local/state/pereprava/<slug>.log` by default (configurable per job)
+
+## Packaging
+
+No flatpak for now — Pereprava needs to control host `systemd --user` units and read
+arbitrary host paths, both of which fight the flatpak sandbox model. Plain local install
+only. See `~/Projects/CLAUDE.md` for the reasoning if this changes later.

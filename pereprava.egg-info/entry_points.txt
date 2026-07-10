@@ -1,0 +1,2 @@
+[console_scripts]
+pereprava = pereprava.pereprava:main

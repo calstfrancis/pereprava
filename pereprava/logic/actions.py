@@ -1,0 +1,53 @@
+"""Job mutation actions: every create/edit/delete/toggle goes through here.
+
+Each mutation follows the same order: write JSON -> regenerate units -> daemon-reload.
+"""
+
+from __future__ import annotations
+
+from pereprava.logic.units import unit_basename
+from pereprava.model.job import Job
+from pereprava.storage import jobs_store, systemctl, units_io
+
+
+def save_and_apply(job: Job) -> None:
+    """Persist a job's JSON and (re)generate + (re)enable its systemd units."""
+    jobs_store.save_job(job)
+    units_io.write_units(job)
+    systemctl.daemon_reload()
+    timer = f"{unit_basename(job.slug)}.timer"
+    if job.enabled:
+        systemctl.enable_now(timer)
+    else:
+        systemctl.disable_now(timer)
+
+
+def delete_job_and_units(slug: str) -> None:
+    base = unit_basename(slug)
+    systemctl.disable_now(f"{base}.timer")
+    units_io.remove_units(slug)
+    systemctl.daemon_reload()
+    jobs_store.delete_job(slug)
+
+
+def set_enabled(job: Job, enabled: bool) -> None:
+    job.enabled = enabled
+    save_and_apply(job)
+
+
+def run_now(slug: str) -> None:
+    base = unit_basename(slug)
+    systemctl.start_now(f"{base}.service")
+
+
+def repair_units(job: Job) -> None:
+    """Regenerate units for a job whose JSON exists but whose units went missing."""
+    save_and_apply(job)
+
+
+def remove_unmanaged_unit(slug: str) -> None:
+    """Disable and delete a unit that has no matching job JSON."""
+    base = unit_basename(slug)
+    systemctl.disable_now(f"{base}.timer")
+    units_io.remove_units(slug)
+    systemctl.daemon_reload()

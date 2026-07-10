@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Pereprava
+Comment=Dashboard for rclone/rsync backup jobs run via systemd
+Exec=pereprava %U
+Icon=folder-remote
+Categories=System;Utility;
+Terminal=false
+StartupNotify=true
+X-GNOME-SingleWindow=true
+StartupWMClass=pereprava

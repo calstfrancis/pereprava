@@ -1,0 +1,292 @@
+"""Add/Edit job dialog. Save is gated on validate_job() — never trusts UI-only state."""
+
+from __future__ import annotations
+
+import shlex
+from typing import Callable
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+from gi.repository import Adw, Gio, GLib, Gtk
+
+from pereprava.logic.schedule import PRESET_LABELS, preset_to_on_calendar, validate_on_calendar
+from pereprava.logic.slug import unique_slug
+from pereprava.logic.validation import validate_job
+from pereprava.model.job import JOB_TYPE_LABELS, Job, JobType, Schedule
+from pereprava.storage.jobs_store import list_job_slugs
+from pereprava.ui.remote_browser import RemoteBrowserDialog
+
+_RCLONE_TYPES = {JobType.RCLONE_COPY, JobType.RCLONE_SYNC, JobType.RCLONE_BISYNC}
+
+_JOB_TYPES = list(JOB_TYPE_LABELS.keys())
+_PRESETS = ["hourly", "every6h", "daily", "weekly", "custom"]
+
+
+class JobFormDialog(Adw.Dialog):
+    def __init__(self, on_save: Callable[[Job, bool], None], job: Job | None = None):
+        super().__init__()
+        self._on_save = on_save
+        self._editing = job
+        self.set_content_width(560)
+        self.set_content_height(680)
+        self.set_title("Edit Job" if job else "Add Job")
+
+        toolbar_view = Adw.ToolbarView()
+        header = Adw.HeaderBar()
+        header.add_css_class("flat")
+        self._save_button = Gtk.Button(label="Save")
+        self._save_button.add_css_class("suggested-action")
+        self._save_button.connect("clicked", self._on_save_clicked)
+        header.pack_end(self._save_button)
+        cancel_button = Gtk.Button(label="Cancel")
+        cancel_button.connect("clicked", lambda _b: self.close())
+        header.pack_start(cancel_button)
+        toolbar_view.add_top_bar(header)
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_vexpand(True)
+        page = Adw.PreferencesPage()
+        scrolled.set_child(page)
+        toolbar_view.set_content(scrolled)
+        self.set_child(toolbar_view)
+
+        self._error_banner = Adw.Banner()
+        self._error_banner.set_revealed(False)
+
+        # --- Basics ---
+        basics = Adw.PreferencesGroup(title="Basics")
+        page.add(basics)
+
+        self._name_row = Adw.EntryRow(title="Name")
+        basics.add(self._name_row)
+
+        self._type_row = Adw.ComboRow(title="Job type")
+        self._type_row.set_model(Gtk.StringList.new([JOB_TYPE_LABELS[t] for t in _JOB_TYPES]))
+        self._type_row.connect("notify::selected", self._on_type_changed)
+        basics.add(self._type_row)
+
+        # --- Source / destination ---
+        paths = Adw.PreferencesGroup(title="Paths")
+        page.add(paths)
+        self._paths_group = paths
+
+        self._source_row = Adw.EntryRow(title="Source")
+        source_pick = Gtk.Button(icon_name="folder-open-symbolic")
+        source_pick.set_valign(Gtk.Align.CENTER)
+        source_pick.connect("clicked", self._pick_source_folder)
+        self._source_row.add_suffix(source_pick)
+        paths.add(self._source_row)
+
+        self._destination_row = Adw.EntryRow(title="Destination (remote:path or local path)")
+        dest_browse = Gtk.Button(icon_name="folder-remote-symbolic")
+        dest_browse.set_valign(Gtk.Align.CENTER)
+        dest_browse.set_tooltip_text("Browse a configured rclone remote")
+        dest_browse.connect("clicked", self._pick_remote_destination)
+        self._destination_row.add_suffix(dest_browse)
+        self._dest_browse_button = dest_browse
+        paths.add(self._destination_row)
+
+        self._custom_command_row = Adw.EntryRow(title="Custom command (space-separated)")
+        paths.add(self._custom_command_row)
+
+        self._extra_args_row = Adw.EntryRow(title="Extra arguments (space-separated)")
+        paths.add(self._extra_args_row)
+
+        # --- Safety ---
+        safety = Adw.PreferencesGroup(title="Safety")
+        page.add(safety)
+        self._safety_group = safety
+
+        self._rsync_delete_row = Adw.SwitchRow(
+            title="Delete extraneous files at destination (--delete)",
+        )
+        self._rsync_delete_row.connect("notify::active", lambda *_a: self._update_destructive_ui())
+        safety.add(self._rsync_delete_row)
+
+        self._destructive_banner = Adw.Banner()
+        self._destructive_banner.set_title("This job can delete files at the destination")
+        self._destructive_banner.set_revealed(False)
+        safety.add(self._destructive_banner)
+
+        self._ack_row = Adw.ActionRow(title="I understand this job can delete files")
+        self._ack_check = Gtk.CheckButton()
+        self._ack_check.connect("toggled", lambda *_a: self._refresh_save_sensitivity())
+        self._ack_row.add_prefix(self._ack_check)
+        self._ack_row.set_activatable_widget(self._ack_check)
+        safety.add(self._ack_row)
+
+        # --- Schedule ---
+        schedule_group = Adw.PreferencesGroup(title="Schedule")
+        page.add(schedule_group)
+
+        self._preset_row = Adw.ComboRow(title="Runs")
+        self._preset_row.set_model(Gtk.StringList.new([PRESET_LABELS[p] for p in _PRESETS]))
+        self._preset_row.set_selected(_PRESETS.index("daily"))
+        self._preset_row.connect("notify::selected", self._on_preset_changed)
+        schedule_group.add(self._preset_row)
+
+        self._custom_calendar_row = Adw.EntryRow(title="Custom OnCalendar= value")
+        schedule_group.add(self._custom_calendar_row)
+
+        test_row = Adw.ActionRow(title="Preview schedule")
+        test_button = Gtk.Button(label="Test")
+        test_button.set_valign(Gtk.Align.CENTER)
+        test_button.connect("clicked", self._on_test_schedule)
+        test_row.add_suffix(test_button)
+        schedule_group.add(test_row)
+        self._schedule_preview_row = Adw.ActionRow(title="")
+        self._schedule_preview_row.set_visible(False)
+        schedule_group.add(self._schedule_preview_row)
+
+        # --- Logging ---
+        log_group = Adw.PreferencesGroup(title="Logging")
+        page.add(log_group)
+        self._log_path_row = Adw.EntryRow(title="Log file")
+        log_group.add(self._log_path_row)
+
+        # --- Errors ---
+        errors_group = Adw.PreferencesGroup()
+        page.add(errors_group)
+        self._errors_label = Gtk.Label(label="")
+        self._errors_label.add_css_class("error")
+        self._errors_label.set_wrap(True)
+        self._errors_label.set_xalign(0.0)
+        self._errors_label.set_visible(False)
+        errors_group.add(self._errors_label)
+
+        self._existing_slugs = set(list_job_slugs())
+        if job:
+            self._existing_slugs.discard(job.slug)
+            self._populate(job)
+        else:
+            self._preset_row.set_selected(_PRESETS.index("daily"))
+
+        self._on_type_changed()
+        self._on_preset_changed()
+        self._update_destructive_ui()
+
+    # --- populate for edit ---
+    def _populate(self, job: Job) -> None:
+        self._name_row.set_text(job.name)
+        self._type_row.set_selected(_JOB_TYPES.index(job.job_type))
+        self._source_row.set_text(job.source)
+        self._destination_row.set_text(job.destination)
+        self._custom_command_row.set_text(shlex.join(job.custom_command or []))
+        self._extra_args_row.set_text(shlex.join(job.extra_args))
+        self._rsync_delete_row.set_active(job.rsync_delete)
+        self._log_path_row.set_text(job.log_path)
+        preset = job.schedule.preset if job.schedule.preset in _PRESETS else "custom"
+        self._preset_row.set_selected(_PRESETS.index(preset))
+        self._custom_calendar_row.set_text(job.schedule.on_calendar)
+
+    # --- selection helpers ---
+    def _selected_type(self) -> JobType:
+        return _JOB_TYPES[self._type_row.get_selected()]
+
+    def _selected_preset(self) -> str:
+        return _PRESETS[self._preset_row.get_selected()]
+
+    def _on_type_changed(self, *_args) -> None:
+        job_type = self._selected_type()
+        self._destination_row.set_visible(job_type != JobType.CUSTOM)
+        self._custom_command_row.set_visible(job_type == JobType.CUSTOM)
+        self._rsync_delete_row.set_visible(job_type == JobType.RSYNC)
+        self._dest_browse_button.set_visible(job_type in _RCLONE_TYPES)
+        self._update_destructive_ui()
+
+    def _on_preset_changed(self, *_args) -> None:
+        is_custom = self._selected_preset() == "custom"
+        self._custom_calendar_row.set_visible(is_custom)
+        if not is_custom:
+            self._custom_calendar_row.set_text(preset_to_on_calendar(self._selected_preset()))
+
+    def _is_destructive(self) -> bool:
+        job_type = self._selected_type()
+        if job_type == JobType.RCLONE_COPY:
+            return False
+        if job_type == JobType.RSYNC:
+            return self._rsync_delete_row.get_active()
+        return True  # sync, bisync, custom
+
+    def _update_destructive_ui(self) -> None:
+        destructive = self._is_destructive()
+        self._destructive_banner.set_revealed(destructive)
+        self._ack_row.set_visible(destructive)
+        if not destructive:
+            self._ack_check.set_active(False)
+        self._refresh_save_sensitivity()
+
+    def _refresh_save_sensitivity(self) -> None:
+        self._save_button.set_sensitive(not self._is_destructive() or self._ack_check.get_active())
+
+    def _pick_source_folder(self, _button) -> None:
+        dialog = Gtk.FileDialog()
+
+        def on_response(dlg, result):
+            try:
+                folder = dlg.select_folder_finish(result)
+            except GLib.Error:
+                return
+            if folder:
+                self._source_row.set_text(folder.get_path())
+
+        dialog.select_folder(self.get_root(), None, on_response)
+
+    def _pick_remote_destination(self, _button) -> None:
+        current = self._destination_row.get_text().strip()
+        initial_remote = current.split(":", 1)[0] + ":" if ":" in current else None
+
+        def on_select(remote_path: str) -> None:
+            self._destination_row.set_text(remote_path)
+
+        RemoteBrowserDialog(on_select, initial_remote=initial_remote).present(self)
+
+    def _on_test_schedule(self, _button) -> None:
+        value = self._custom_calendar_row.get_text() if self._custom_calendar_row.get_visible() else preset_to_on_calendar(self._selected_preset())
+        ok, message = validate_on_calendar(value)
+        self._schedule_preview_row.set_visible(True)
+        self._schedule_preview_row.set_title(message if ok else f"Invalid: {message}")
+
+    def _build_job(self) -> Job:
+        job_type = self._selected_type()
+        name = self._name_row.get_text().strip()
+        slug = self._editing.slug if self._editing else unique_slug(name, self._existing_slugs)
+        preset = self._selected_preset()
+        on_calendar = (
+            self._custom_calendar_row.get_text()
+            if preset == "custom"
+            else preset_to_on_calendar(preset)
+        )
+        return Job(
+            slug=slug,
+            name=name,
+            job_type=job_type,
+            source=self._source_row.get_text().strip(),
+            destination=self._destination_row.get_text().strip(),
+            extra_args=shlex.split(self._extra_args_row.get_text()),
+            custom_command=shlex.split(self._custom_command_row.get_text()) or None
+            if job_type == JobType.CUSTOM
+            else None,
+            rsync_delete=self._rsync_delete_row.get_active(),
+            schedule=Schedule(preset=preset, on_calendar=on_calendar),
+            log_path=self._log_path_row.get_text().strip(),
+            enabled=self._editing.enabled if self._editing else True,
+        )
+
+    def _on_save_clicked(self, _button) -> None:
+        job = self._build_job()
+        if not job.log_path:
+            from pathlib import Path
+
+            job.log_path = str(Path.home() / ".local" / "state" / "pereprava" / f"{job.slug}.log")
+        acknowledged = self._ack_check.get_active()
+        errors = validate_job(job, destructive_acknowledged=acknowledged)
+        if errors:
+            self._errors_label.set_text("\n".join(errors))
+            self._errors_label.set_visible(True)
+            return
+        self._errors_label.set_visible(False)
+        self._on_save(job, acknowledged)
+        self.close()
