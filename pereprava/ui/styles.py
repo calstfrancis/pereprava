@@ -36,6 +36,18 @@ CSS = """
 .status-toggle:focus {
     opacity: 1;
 }
+.pereprava-current-badge {
+    background-color: @accent_bg_color;
+    color: @accent_fg_color;
+    border-radius: 999px;
+    padding: 1px 9px;
+    font-size: 0.85em;
+    font-weight: bold;
+}
+.pereprava-bullet-dot {
+    color: @accent_color;
+    font-size: 0.7em;
+}
 """
 
 

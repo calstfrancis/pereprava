@@ -9,14 +9,38 @@ and lets you create/edit them through a form instead of hand-writing systemd uni
 or a custom command) is flagged loudly in the UI and requires an explicit
 acknowledgment before it can be saved.
 
-## Running
+## Requirements
+
+- Python 3.10+
+- GTK4 and libadwaita with their GObject Introspection bindings (`python3-gobject` /
+  `python-gobject` / distro equivalent) installed system-wide
+- `rclone` and/or `rsync`, whichever your jobs use
+- `systemd --user` (any modern Linux desktop)
+
+## Installing
 
 ```sh
 ./install.sh
 pereprava
-# or, without installing:
-python -m venv .venv && .venv/bin/pip install -e . && .venv/bin/pereprava
 ```
+
+This creates a `.venv` **with `--system-site-packages`**, so it reuses your system's
+GTK4/libadwaita bindings rather than trying to build `pycairo` from source (which needs
+`meson` and dev headers you may not have). Installs a launcher to `~/.local/bin/pereprava`
+and a desktop entry — make sure `~/.local/bin` is on your `PATH`.
+
+## Uninstalling
+
+```sh
+./uninstall.sh
+```
+
+Removes the venv, launcher, and desktop entry. **Does not** touch your job definitions,
+generated systemd units, or logs — your scheduled backups keep running untouched. The
+script prints the manual commands to remove a specific job's backup entirely, if you
+want that.
+
+## Data locations
 
 - Job definitions: `~/.config/pereprava/jobs/<slug>.json` (source of truth)
 - Generated systemd units: `~/.config/systemd/user/pereprava-job-<slug>.{service,timer}`
@@ -25,6 +49,8 @@ python -m venv .venv && .venv/bin/pip install -e . && .venv/bin/pereprava
 
 ## Packaging
 
-No flatpak for now — Pereprava needs to control host `systemd --user` units and read
-arbitrary host paths, both of which fight the flatpak sandbox model. Plain local install
-only. See `~/Projects/CLAUDE.md` for the reasoning if this changes later.
+No flatpak — Pereprava needs to control host `systemd --user` units and read arbitrary
+host paths, both of which fight the flatpak sandbox model. No RPM either; for the small
+number of people using this, the install script is the whole distribution story. Grab a
+release from the [Releases page](https://github.com/calstfrancis/pereprava/releases),
+extract it, and run `./install.sh`.

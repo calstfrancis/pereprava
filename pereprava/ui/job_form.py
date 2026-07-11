@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shlex
+from pathlib import Path
 from typing import Callable
 
 import gi
@@ -144,6 +145,11 @@ class JobFormDialog(Adw.Dialog):
         log_group = Adw.PreferencesGroup(title="Logging")
         page.add(log_group)
         self._log_path_row = Adw.EntryRow(title="Log file")
+        log_pick = Gtk.Button(icon_name="folder-open-symbolic")
+        log_pick.set_valign(Gtk.Align.CENTER)
+        log_pick.set_tooltip_text("Choose a log file location")
+        log_pick.connect("clicked", self._pick_log_file)
+        self._log_path_row.add_suffix(log_pick)
         log_group.add(self._log_path_row)
 
         # --- Errors ---
@@ -234,6 +240,25 @@ class JobFormDialog(Adw.Dialog):
 
         dialog.select_folder(self.get_root(), None, on_response)
 
+    def _pick_log_file(self, _button) -> None:
+        dialog = Gtk.FileDialog()
+        current = self._log_path_row.get_text().strip()
+        current_path = Path(current) if current else None
+        if current_path:
+            if current_path.parent.is_dir():
+                dialog.set_initial_folder(Gio.File.new_for_path(str(current_path.parent)))
+            dialog.set_initial_name(current_path.name)
+
+        def on_response(dlg, result):
+            try:
+                file = dlg.save_finish(result)
+            except GLib.Error:
+                return
+            if file:
+                self._log_path_row.set_text(file.get_path())
+
+        dialog.save(self.get_root(), None, on_response)
+
     def _pick_remote_destination(self, _button) -> None:
         current = self._destination_row.get_text().strip()
         initial_remote = current.split(":", 1)[0] + ":" if ":" in current else None
@@ -278,8 +303,6 @@ class JobFormDialog(Adw.Dialog):
     def _on_save_clicked(self, _button) -> None:
         job = self._build_job()
         if not job.log_path:
-            from pathlib import Path
-
             job.log_path = str(Path.home() / ".local" / "state" / "pereprava" / f"{job.slug}.log")
         acknowledged = self._ack_check.get_active()
         errors = validate_job(job, destructive_acknowledged=acknowledged)

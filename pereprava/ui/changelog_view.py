@@ -89,11 +89,13 @@ def md_inline_to_pango(text: str) -> str:
 
 
 def _bullet_row(text: str) -> Gtk.Box:
-    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
     row.set_margin_start(8)
-    dot = Gtk.Label(label="•")
+    row.set_margin_bottom(6)
+    dot = Gtk.Label(label="●")
+    dot.add_css_class("pereprava-bullet-dot")
     dot.set_valign(Gtk.Align.START)
-    dot.add_css_class("dim-label")
+    dot.set_margin_top(6)
     label = Gtk.Label()
     label.set_markup(_wrap_markdown(text))
     label.set_xalign(0.0)
@@ -124,9 +126,16 @@ def _build_body(changelog_text: str, current_version: str) -> Gtk.Widget:
                 version, rest = inner.rstrip("]"), ""
             title = rest[2:] if rest.startswith("— ") else rest
 
-            heading_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            heading_row.set_margin_top(0 if first_heading else 22)
+            if not first_heading:
+                separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+                separator.set_margin_top(24)
+                separator.set_margin_bottom(20)
+                separator.add_css_class("spacer")
+                body.append(separator)
             first_heading = False
+
+            heading_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            heading_row.set_valign(Gtk.Align.CENTER)
 
             ver_label = Gtk.Label(label=version)
             ver_label.add_css_class("monospace")
@@ -136,9 +145,9 @@ def _build_body(changelog_text: str, current_version: str) -> Gtk.Widget:
             heading_row.append(ver_label)
 
             if version == current_version:
-                badge = Gtk.Label(label="· Current")
-                badge.add_css_class("caption-heading")
-                badge.add_css_class("accent")
+                badge = Gtk.Label(label="Current")
+                badge.add_css_class("pereprava-current-badge")
+                badge.set_valign(Gtk.Align.CENTER)
                 heading_row.append(badge)
 
             body.append(heading_row)
@@ -154,9 +163,9 @@ def _build_body(changelog_text: str, current_version: str) -> Gtk.Widget:
             label = Gtk.Label(label=trimmed[4:])
             label.add_css_class("heading")
             label.set_xalign(0.0)
-            label.set_margin_top(8)
+            label.set_margin_top(14)
             label.set_margin_start(4)
-            label.set_margin_bottom(2)
+            label.set_margin_bottom(6)
             label.set_wrap(True)
             label.set_max_width_chars(60)
             body.append(label)
