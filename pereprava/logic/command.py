@@ -24,4 +24,6 @@ def build_argv(job: Job) -> list[str]:
         return argv
     if job.job_type == JobType.CUSTOM:
         return list(job.custom_command or [])
+    if job.job_type == JobType.RCLONE_MOUNT:
+        return [RCLONE_BIN, "mount", job.source, job.destination, *job.extra_args]
     raise ValueError(f"Unhandled job type: {job.job_type}")

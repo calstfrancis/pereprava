@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0] "Anchor" — 2026-07-13
+
+### Added
+- New `rclone mount` job type for persistent mount points (e.g. mounting pCloud at `~/pCloud`), alongside the existing copy/sync/rsync/custom job types
+- Mount jobs run as a `systemd --user` service enabled directly via `WantedBy=default.target` instead of a timer, since they're meant to stay up rather than run on a schedule; the dashboard shows Mounted/Unmounted/Mount failed instead of the periodic-job OK/Paused/Failed wording, and "Pause"/"Resume" become "Unmount"/"Mount"
+- Add/Edit form swaps the path pickers for a mount job: Source becomes the rclone remote (with the remote browser), Destination becomes the local mount point (with a folder picker), and the Schedule/Safety sections hide since neither applies
+- A "Startup" section in the form surfaces whether `loginctl` lingering is enabled for your user, with a one-click Enable button — lingering is what lets the mount start at boot without an interactive login
+- Discovery/reconciliation now recognizes a mount job's `.service` unit the same way it already recognized a periodic job's `.timer`, so unmanaged/needs-repair detection covers both
+
 ## [0.1.0] "First Crossing" — 2026-07-11
 
 Initial release.

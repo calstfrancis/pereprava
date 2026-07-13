@@ -6,6 +6,7 @@ import re
 from datetime import datetime
 
 from pereprava.logic.units import unit_basename
+from pereprava.model.job import JobType
 from pereprava.model.status import JobStatus, RunState
 from pereprava.storage import systemctl
 
@@ -36,9 +37,45 @@ def _parse_epoch_field(entry: dict, *keys: str) -> datetime | None:
     return None
 
 
-def get_job_status(slug: str) -> JobStatus:
+def _get_mount_status(service_unit: str) -> JobStatus:
+    """Mount jobs have no timer — the service itself is the enabled/running unit,
+    and its steady state (mounted and idle) is what other job types call OK."""
+    service_props = systemctl.show_properties(
+        service_unit,
+        ["ActiveState", "SubState", "Result", "ActiveEnterTimestamp", "UnitFileState"],
+    )
+    enabled = service_props.get("UnitFileState") == "enabled"
+    active_state = service_props.get("ActiveState", "")
+    result = service_props.get("Result", "")
+    mounted_since = _parse_systemd_timestamp(service_props.get("ActiveEnterTimestamp", ""))
+
+    if active_state == "activating":
+        state = RunState.RUNNING
+    elif not enabled:
+        state = RunState.PAUSED
+    elif active_state == "failed" or (result and result != "success"):
+        state = RunState.FAILED
+    elif active_state == "active":
+        state = RunState.OK
+    else:
+        state = RunState.IDLE
+
+    return JobStatus(
+        state=state,
+        timer_enabled=enabled,
+        next_run=None,
+        last_run=mounted_since,
+        last_result=result or None,
+    )
+
+
+def get_job_status(slug: str, job_type: JobType) -> JobStatus:
     base = unit_basename(slug)
     service_unit = f"{base}.service"
+
+    if job_type == JobType.RCLONE_MOUNT:
+        return _get_mount_status(service_unit)
+
     timer_unit = f"{base}.timer"
 
     service_props = systemctl.show_properties(

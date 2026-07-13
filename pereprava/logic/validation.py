@@ -30,9 +30,10 @@ def validate_job(job: Job, destructive_acknowledged: bool = False) -> list[str]:
     if not job.log_path.strip():
         errors.append("Log path cannot be empty.")
 
-    ok, message = validate_on_calendar(job.schedule.on_calendar)
-    if not ok:
-        errors.append(f"Invalid schedule: {message}")
+    if job.job_type != JobType.RCLONE_MOUNT:
+        ok, message = validate_on_calendar(job.schedule.on_calendar)
+        if not ok:
+            errors.append(f"Invalid schedule: {message}")
 
     if job.destructive and not destructive_acknowledged:
         errors.append(

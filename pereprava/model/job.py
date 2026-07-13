@@ -14,6 +14,7 @@ class JobType(Enum):
     RCLONE_BISYNC = "rclone_bisync"
     RSYNC = "rsync"
     CUSTOM = "custom"
+    RCLONE_MOUNT = "rclone_mount"
 
 
 # Human-facing labels, in the order they should appear in the job-type combo.
@@ -23,6 +24,7 @@ JOB_TYPE_LABELS: dict[JobType, str] = {
     JobType.RCLONE_BISYNC: "rclone bisync (can delete on either side)",
     JobType.RSYNC: "rsync",
     JobType.CUSTOM: "Custom command",
+    JobType.RCLONE_MOUNT: "rclone mount (persistent mount point)",
 }
 
 SCHEDULE_PRESETS: dict[str, str] = {
@@ -78,13 +80,18 @@ class Job:
 
         Derived from job_type, never a free-standing user-settable flag —
         rclone copy structurally cannot delete, sync/bisync/custom always can.
+        A mount doesn't copy/delete anything itself, so it's never destructive.
         """
-        if self.job_type == JobType.RCLONE_COPY:
+        if self.job_type in (JobType.RCLONE_COPY, JobType.RCLONE_MOUNT):
             return False
         if self.job_type == JobType.RSYNC:
             return self.rsync_delete
         # rclone_sync, rclone_bisync, custom
         return True
+
+    @property
+    def is_mount(self) -> bool:
+        return self.job_type == JobType.RCLONE_MOUNT
 
     def to_dict(self) -> dict:
         return {

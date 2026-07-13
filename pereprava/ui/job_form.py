@@ -16,6 +16,7 @@ from pereprava.logic.schedule import PRESET_LABELS, preset_to_on_calendar, valid
 from pereprava.logic.slug import unique_slug
 from pereprava.logic.validation import validate_job
 from pereprava.model.job import JOB_TYPE_LABELS, Job, JobType, Schedule
+from pereprava.storage import linger
 from pereprava.storage.jobs_store import list_job_slugs
 from pereprava.ui.remote_browser import RemoteBrowserDialog
 
@@ -78,6 +79,14 @@ class JobFormDialog(Adw.Dialog):
         source_pick.set_valign(Gtk.Align.CENTER)
         source_pick.connect("clicked", self._pick_source_folder)
         self._source_row.add_suffix(source_pick)
+        self._source_pick_button = source_pick
+        source_browse = Gtk.Button(icon_name="folder-remote-symbolic")
+        source_browse.set_valign(Gtk.Align.CENTER)
+        source_browse.set_tooltip_text("Browse a configured rclone remote")
+        source_browse.connect("clicked", self._pick_remote_source)
+        source_browse.set_visible(False)
+        self._source_row.add_suffix(source_browse)
+        self._source_browse_button = source_browse
         paths.add(self._source_row)
 
         self._destination_row = Adw.EntryRow(title="Destination (remote:path or local path)")
@@ -87,6 +96,13 @@ class JobFormDialog(Adw.Dialog):
         dest_browse.connect("clicked", self._pick_remote_destination)
         self._destination_row.add_suffix(dest_browse)
         self._dest_browse_button = dest_browse
+        dest_pick = Gtk.Button(icon_name="folder-open-symbolic")
+        dest_pick.set_valign(Gtk.Align.CENTER)
+        dest_pick.set_tooltip_text("Choose a local mount point folder")
+        dest_pick.connect("clicked", self._pick_mount_point)
+        dest_pick.set_visible(False)
+        self._destination_row.add_suffix(dest_pick)
+        self._dest_pick_button = dest_pick
         paths.add(self._destination_row)
 
         self._custom_command_row = Adw.EntryRow(title="Custom command (space-separated)")
@@ -118,8 +134,19 @@ class JobFormDialog(Adw.Dialog):
         self._ack_row.set_activatable_widget(self._ack_check)
         safety.add(self._ack_row)
 
+        # --- Startup (mount jobs only) ---
+        self._startup_group = Adw.PreferencesGroup(title="Startup")
+        page.add(self._startup_group)
+
+        self._linger_banner = Adw.Banner()
+        self._linger_banner.set_title("Enable lingering to start this mount at boot without logging in")
+        self._linger_banner.set_button_label("Enable")
+        self._linger_banner.connect("button-clicked", self._on_enable_linger)
+        self._startup_group.add(self._linger_banner)
+
         # --- Schedule ---
         schedule_group = Adw.PreferencesGroup(title="Schedule")
+        self._schedule_group = schedule_group
         page.add(schedule_group)
 
         self._preset_row = Adw.ComboRow(title="Runs")
@@ -196,10 +223,29 @@ class JobFormDialog(Adw.Dialog):
 
     def _on_type_changed(self, *_args) -> None:
         job_type = self._selected_type()
+        is_mount = job_type == JobType.RCLONE_MOUNT
         self._destination_row.set_visible(job_type != JobType.CUSTOM)
         self._custom_command_row.set_visible(job_type == JobType.CUSTOM)
         self._rsync_delete_row.set_visible(job_type == JobType.RSYNC)
         self._dest_browse_button.set_visible(job_type in _RCLONE_TYPES)
+        self._safety_group.set_visible(not is_mount)
+        self._schedule_group.set_visible(not is_mount)
+        self._startup_group.set_visible(is_mount)
+
+        # For a mount, source is the rclone remote and destination is the local
+        # mount point — the reverse of copy/sync jobs — so the two path-picker
+        # buttons swap which row they appear on.
+        self._source_row.set_title("Remote (e.g. pcloud:path)" if is_mount else "Source")
+        self._destination_row.set_title(
+            "Mount point (local folder)" if is_mount else "Destination (remote:path or local path)"
+        )
+        self._source_pick_button.set_visible(not is_mount)
+        self._source_browse_button.set_visible(is_mount)
+        self._dest_pick_button.set_visible(is_mount)
+        if is_mount:
+            self._dest_browse_button.set_visible(False)
+            self._refresh_linger_banner()
+
         self._update_destructive_ui()
 
     def _on_preset_changed(self, *_args) -> None:
@@ -210,7 +256,7 @@ class JobFormDialog(Adw.Dialog):
 
     def _is_destructive(self) -> bool:
         job_type = self._selected_type()
-        if job_type == JobType.RCLONE_COPY:
+        if job_type in (JobType.RCLONE_COPY, JobType.RCLONE_MOUNT):
             return False
         if job_type == JobType.RSYNC:
             return self._rsync_delete_row.get_active()
@@ -267,6 +313,40 @@ class JobFormDialog(Adw.Dialog):
             self._destination_row.set_text(remote_path)
 
         RemoteBrowserDialog(on_select, initial_remote=initial_remote).present(self)
+
+    def _pick_remote_source(self, _button) -> None:
+        current = self._source_row.get_text().strip()
+        initial_remote = current.split(":", 1)[0] + ":" if ":" in current else None
+
+        def on_select(remote_path: str) -> None:
+            self._source_row.set_text(remote_path)
+
+        RemoteBrowserDialog(on_select, initial_remote=initial_remote).present(self)
+
+    def _pick_mount_point(self, _button) -> None:
+        dialog = Gtk.FileDialog()
+
+        def on_response(dlg, result):
+            try:
+                folder = dlg.select_folder_finish(result)
+            except GLib.Error:
+                return
+            if folder:
+                self._destination_row.set_text(folder.get_path())
+
+        dialog.select_folder(self.get_root(), None, on_response)
+
+    def _refresh_linger_banner(self) -> None:
+        enabled = linger.is_enabled()
+        self._linger_banner.set_revealed(not enabled)
+
+    def _on_enable_linger(self, _banner) -> None:
+        if linger.enable():
+            self._linger_banner.set_revealed(False)
+        else:
+            self._linger_banner.set_title(
+                "Couldn't enable lingering — run `loginctl enable-linger` yourself"
+            )
 
     def _on_test_schedule(self, _button) -> None:
         value = self._custom_calendar_row.get_text() if self._custom_calendar_row.get_visible() else preset_to_on_calendar(self._selected_preset())

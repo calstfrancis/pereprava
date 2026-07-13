@@ -1,7 +1,8 @@
 # Pereprava
 
 A small GTK4/libadwaita dashboard for rclone/rsync backup jobs run as `systemd --user`
-timers. Shows all your backup jobs at a glance — last run, next run, success/failure —
+timers, plus persistent `rclone mount` points run as `systemd --user` services. Shows
+all your jobs at a glance — last run, next run, mounted/unmounted, success/failure —
 and lets you create/edit them through a form instead of hand-writing systemd units.
 
 **Safety first:** non-destructive `rclone copy` is the default job type. Anything that
@@ -15,7 +16,10 @@ acknowledgment before it can be saved.
 - GTK4 and libadwaita with their GObject Introspection bindings (`python3-gobject` /
   `python-gobject` / distro equivalent) installed system-wide
 - `rclone` and/or `rsync`, whichever your jobs use
+- FUSE (`/dev/fuse` + the `fuse`/`fuse3` package), if you use any `rclone mount` jobs
 - `systemd --user` (any modern Linux desktop)
+- For a mount to start at boot without logging in, enable lingering for your user
+  (`loginctl enable-linger`) — the Add/Edit form offers a button for this
 
 ## Installing
 

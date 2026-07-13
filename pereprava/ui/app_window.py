@@ -197,15 +197,15 @@ class AppWindow(Adw.ApplicationWindow):
 
         def on_response(_dlg, response):
             if response == "delete":
-                actions.delete_job_and_units(slug)
+                actions.delete_job_and_units(job)
                 self._toast("Job deleted")
                 self.refresh()
 
         dialog.connect("response", on_response)
         dialog.present(self)
 
-    def _on_remove_unmanaged(self, slug: str) -> None:
-        actions.remove_unmanaged_unit(slug)
+    def _on_remove_unmanaged(self, slug: str, unit_name: str) -> None:
+        actions.remove_unmanaged_unit(slug, unit_name)
         self._toast("Unit removed")
         self.refresh()
 

@@ -22,6 +22,7 @@ _TYPE_ICON = {
     JobType.RCLONE_BISYNC: "emblem-synchronizing-symbolic",
     JobType.RSYNC: "folder-symbolic",
     JobType.CUSTOM: "utilities-terminal-symbolic",
+    JobType.RCLONE_MOUNT: "drive-harddisk-symbolic",
 }
 
 _STATE_CSS = {
@@ -52,6 +53,19 @@ def _relative(dt: datetime, *, future: bool) -> str:
 
 def status_text(entry: JobEntry) -> str:
     status = entry.status
+    if entry.job.job_type == JobType.RCLONE_MOUNT:
+        if status.state == RunState.RUNNING:
+            return "Mounting…"
+        if status.state == RunState.PAUSED:
+            return "Unmounted"
+        if status.state == RunState.FAILED:
+            when = _relative(status.last_run, future=False) if status.last_run else ""
+            return f"Mount failed {when}".strip()
+        if status.state == RunState.OK:
+            if status.last_run:
+                return f"Mounted · since {_relative(status.last_run, future=False)}"
+            return "Mounted"
+        return "Not mounted"
     if status.state == RunState.RUNNING:
         return "Running…"
     if status.state == RunState.PAUSED:
@@ -76,6 +90,7 @@ def build_menu_button(
     on_edit: Callable[[str], None],
     on_delete: Callable[[str], None],
     is_paused: bool,
+    is_mount: bool = False,
 ) -> Gtk.MenuButton:
     popover = Gtk.Popover()
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -99,9 +114,16 @@ def build_menu_button(
         button.connect("clicked", _clicked)
         return button
 
-    box.append(make_item("Run Now", lambda: on_run_now(slug)))
-    box.append(make_item("View Log", lambda: on_view_log(slug)))
-    box.append(make_item("Resume" if is_paused else "Pause", lambda: on_toggle_pause(slug)))
+    if is_mount:
+        # A mount has no "run once" concept — Mount/Unmount (toggle_pause) already
+        # covers start/stop.
+        box.append(make_item("Unmount" if not is_paused else "Mount", lambda: on_toggle_pause(slug)))
+    else:
+        box.append(make_item("Run Now", lambda: on_run_now(slug)))
+        box.append(make_item("View Log", lambda: on_view_log(slug)))
+        box.append(make_item("Resume" if is_paused else "Pause", lambda: on_toggle_pause(slug)))
+    if is_mount:
+        box.append(make_item("View Log", lambda: on_view_log(slug)))
     box.append(Gtk.Separator())
     box.append(make_item("Edit…", lambda: on_edit(slug)))
     box.append(make_item("Delete…", lambda: on_delete(slug)))
@@ -145,6 +167,7 @@ def build_job_row(entry: JobEntry, callbacks: dict) -> Adw.ActionRow:
             on_edit=callbacks["on_edit"],
             on_delete=callbacks["on_delete"],
             is_paused=not job.enabled,
+            is_mount=job.job_type == JobType.RCLONE_MOUNT,
         )
     )
 
@@ -161,7 +184,7 @@ def build_discrepancy_row(disc: Discrepancy, callbacks: dict) -> Adw.ActionRow:
         row.add_prefix(Gtk.Image.new_from_icon_name("dialog-question-symbolic"))
         button = Gtk.Button(label="Remove")
         button.add_css_class("flat")
-        button.connect("clicked", lambda _b: callbacks["on_remove_unmanaged"](disc.slug))
+        button.connect("clicked", lambda _b: callbacks["on_remove_unmanaged"](disc.slug, disc.unit_name))
         row.add_suffix(button)
     else:
         row.set_title(disc.slug)
