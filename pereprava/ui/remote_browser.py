@@ -11,6 +11,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk
 
 from pereprava.storage.rclone import list_dirs, list_remotes
+from pereprava.ui.pcloud_setup import PcloudSetupDialog
 
 
 class RemoteBrowserDialog(Adw.Dialog):
@@ -42,13 +43,18 @@ class RemoteBrowserDialog(Adw.Dialog):
         remotes = list_remotes()
         self._remote = initial_remote or (remotes[0] if remotes else "")
 
-        remote_row = Adw.ComboRow(title="Remote")
-        remote_row.set_model(Gtk.StringList.new(remotes or ["(no remotes configured)"]))
+        self._remote_row = Adw.ComboRow(title="Remote")
+        self._remote_row.set_model(Gtk.StringList.new(remotes or ["(no remotes configured)"]))
         if self._remote in remotes:
-            remote_row.set_selected(remotes.index(self._remote))
-        remote_row.connect("notify::selected", self._on_remote_changed)
+            self._remote_row.set_selected(remotes.index(self._remote))
+        self._remote_row.connect("notify::selected", self._on_remote_changed)
         self._remotes = remotes
-        content.append(remote_row)
+        content.append(self._remote_row)
+
+        add_pcloud_button = Gtk.Button(label="Add pCloud Remote…")
+        add_pcloud_button.set_halign(Gtk.Align.START)
+        add_pcloud_button.connect("clicked", self._on_add_pcloud_remote)
+        content.append(add_pcloud_button)
 
         self._path_label = Gtk.Label(label="/")
         self._path_label.set_xalign(0.0)
@@ -74,6 +80,20 @@ class RemoteBrowserDialog(Adw.Dialog):
 
         self._path = ""
         self._refresh()
+
+    def _on_add_pcloud_remote(self, _button) -> None:
+        def on_created(name: str) -> None:
+            remotes = list_remotes()
+            self._remotes = remotes
+            self._remote_row.set_model(Gtk.StringList.new(remotes or ["(no remotes configured)"]))
+            new_remote = f"{name}:"
+            if new_remote in remotes:
+                self._remote = new_remote
+                self._remote_row.set_selected(remotes.index(new_remote))
+            self._path = ""
+            self._refresh()
+
+        PcloudSetupDialog(on_created).present(self)
 
     def _on_remote_changed(self, row, _pspec) -> None:
         if self._remotes:

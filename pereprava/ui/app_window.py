@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path
+
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import Adw, Gio, GLib, Gtk
 
 from pereprava import __version__ as _APP_VERSION
-from pereprava.logic import actions, discovery
+from pereprava.logic import actions, discovery, import_export
+from pereprava.model.status import RunState
 from pereprava.ui.changelog_view import show_changelog
 from pereprava.ui.job_form import JobFormDialog
 from pereprava.ui.job_row import build_discrepancy_row, build_job_row
@@ -35,6 +39,7 @@ class AppWindow(Adw.ApplicationWindow):
 
         self._is_active = True
         self._auto_refresh_enabled = True
+        self._last_states: dict[str, RunState] = {}
         self.connect("notify::is-active", self._on_is_active_changed)
 
         self._toast_overlay = Adw.ToastOverlay()
@@ -49,6 +54,16 @@ class AppWindow(Adw.ApplicationWindow):
         add_button.set_tooltip_text("Add Job")
         add_button.connect("clicked", self._on_add_job)
         header.pack_start(add_button)
+
+        export_button = Gtk.Button(icon_name="document-save-symbolic")
+        export_button.set_tooltip_text("Export Jobs…")
+        export_button.connect("clicked", self._on_export_jobs)
+        header.pack_start(export_button)
+
+        import_button = Gtk.Button(icon_name="document-open-symbolic")
+        import_button.set_tooltip_text("Import Jobs…")
+        import_button.connect("clicked", self._on_import_jobs)
+        header.pack_start(import_button)
 
         refresh_button = Gtk.Button(icon_name="view-refresh-symbolic")
         refresh_button.set_tooltip_text("Refresh")
@@ -130,6 +145,7 @@ class AppWindow(Adw.ApplicationWindow):
 
     def refresh(self) -> None:
         entries, discrepancies = discovery.scan()
+        self._notify_on_failures(entries)
 
         while True:
             row = self._list_box.get_row_at_index(0)
@@ -161,6 +177,74 @@ class AppWindow(Adw.ApplicationWindow):
 
     def _toast(self, message: str) -> None:
         self._toast_overlay.add_toast(Adw.Toast(title=message, timeout=3))
+
+    def _notify_on_failures(self, entries) -> None:
+        """Send a desktop notification the moment a job transitions into FAILED,
+        not on every refresh tick while it stays failed."""
+        seen_slugs = set()
+        for entry in entries:
+            slug = entry.job.slug
+            seen_slugs.add(slug)
+            state = entry.status.state
+            previous = self._last_states.get(slug)
+            if state == RunState.FAILED and previous != RunState.FAILED:
+                verb = "Mount failed" if entry.job.is_mount else "Job failed"
+                notification = Gio.Notification.new(f"{verb}: {entry.job.name}")
+                notification.set_body(entry.job.destination)
+                notification.set_priority(Gio.NotificationPriority.HIGH)
+                self.get_application().send_notification(f"pereprava-job-{slug}", notification)
+            self._last_states[slug] = state
+        # Drop tracking for jobs that were deleted since the last refresh.
+        for slug in list(self._last_states):
+            if slug not in seen_slugs:
+                del self._last_states[slug]
+
+    def _on_export_jobs(self, _button) -> None:
+        dialog = Gtk.FileDialog()
+        dialog.set_initial_name(f"pereprava-jobs-{datetime.now():%Y%m%d}.json")
+
+        def on_response(dlg, result):
+            try:
+                file = dlg.save_finish(result)
+            except GLib.Error:
+                return
+            if not file:
+                return
+            try:
+                count = import_export.export_jobs(Path(file.get_path()))
+            except OSError as exc:
+                self._toast(f"Export failed: {exc}")
+                return
+            self._toast(f"Exported {count} job(s)")
+
+        dialog.save(self, None, on_response)
+
+    def _on_import_jobs(self, _button) -> None:
+        dialog = Gtk.FileDialog()
+
+        def on_response(dlg, result):
+            try:
+                file = dlg.open_finish(result)
+            except GLib.Error:
+                return
+            if not file:
+                return
+            try:
+                imported, errors = import_export.import_jobs(Path(file.get_path()))
+            except (OSError, ValueError) as exc:
+                self._toast(f"Import failed: {exc}")
+                return
+            self._toast(f"Imported {imported} job(s)")
+            if errors:
+                alert = Adw.AlertDialog(
+                    heading="Some jobs couldn't be imported",
+                    body="\n".join(errors),
+                )
+                alert.add_response("ok", "OK")
+                alert.present(self)
+            self.refresh()
+
+        dialog.open(self, None, on_response)
 
     # --- row actions ---
     def _on_run_now(self, slug: str) -> None:

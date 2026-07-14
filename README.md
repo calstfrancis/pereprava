@@ -20,6 +20,8 @@ acknowledgment before it can be saved.
 - `systemd --user` (any modern Linux desktop)
 - For a mount to start at boot without logging in, enable lingering for your user
   (`loginctl enable-linger`) — the Add/Edit form offers a button for this
+- A browser, if you use the guided "Add pCloud Remote…" setup (it opens pCloud's
+  OAuth login via `rclone authorize`)
 
 ## Installing
 

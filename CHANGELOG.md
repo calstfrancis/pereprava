@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0] "Second Crossing" — 2026-07-13
+
+### Added
+- "Test" button in the Add/Edit form runs a dry run (`--dry-run` for rclone copy/sync/bisync and rsync; a reachability check via `rclone lsjson` for mount jobs) in a background thread and shows the result without touching anything — custom commands are explicitly unsupported since there's nothing safe to preview
+- Real-time remote-name check in the form: as you type a `remote:path` value, an inline hint flags a remote that isn't in `rclone listremotes` before you ever save the job
+- Export/Import buttons in the header bundle every job definition to/from a single JSON file, for backup or moving to another machine; importing renames a slug that collides with an existing job rather than overwriting it, and regenerates/enables systemd units for each imported job
+- Desktop notifications (via `Gio.Notification`) fire the moment a job or mount transitions into a failed state — not on every refresh tick while it stays failed
+- Guided pCloud remote setup: an "Add pCloud Remote…" button in the remote browser walks through rclone's own headless OAuth recipe (`rclone authorize pcloud` → `rclone config create ... token ...`), opening your browser for the login and finishing automatically once you approve access
+
 ## [0.2.0] "Anchor" — 2026-07-13
 
 ### Added

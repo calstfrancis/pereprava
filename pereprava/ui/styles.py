@@ -25,6 +25,10 @@ CSS = """
 .pereprava-warning-icon {
     color: @warning_color;
 }
+.pereprava-hint-warning {
+    color: @warning_color;
+    font-size: 0.9em;
+}
 .pereprava-job-list row {
     padding-top: 6px;
     padding-bottom: 6px;

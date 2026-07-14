@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shlex
+import threading
 from pathlib import Path
 from typing import Callable
 
@@ -12,13 +13,17 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk
 
+from pereprava.logic import dry_run
 from pereprava.logic.schedule import PRESET_LABELS, preset_to_on_calendar, validate_on_calendar
 from pereprava.logic.slug import unique_slug
 from pereprava.logic.validation import validate_job
 from pereprava.model.job import JOB_TYPE_LABELS, Job, JobType, Schedule
 from pereprava.storage import linger
 from pereprava.storage.jobs_store import list_job_slugs
+from pereprava.storage.rclone import list_remotes
 from pereprava.ui.remote_browser import RemoteBrowserDialog
+
+_REMOTE_CHECK_DEBOUNCE_MS = 400
 
 _RCLONE_TYPES = {JobType.RCLONE_COPY, JobType.RCLONE_SYNC, JobType.RCLONE_BISYNC}
 
@@ -31,6 +36,8 @@ class JobFormDialog(Adw.Dialog):
         super().__init__()
         self._on_save = on_save
         self._editing = job
+        self._remote_check_source_id: int | None = None
+        self.connect("closed", self._on_dialog_closed)
         self.set_content_width(560)
         self.set_content_height(680)
         self.set_title("Edit Job" if job else "Add Job")
@@ -87,6 +94,7 @@ class JobFormDialog(Adw.Dialog):
         source_browse.set_visible(False)
         self._source_row.add_suffix(source_browse)
         self._source_browse_button = source_browse
+        self._source_row.connect("changed", self._schedule_remote_check)
         paths.add(self._source_row)
 
         self._destination_row = Adw.EntryRow(title="Destination (remote:path or local path)")
@@ -103,6 +111,7 @@ class JobFormDialog(Adw.Dialog):
         dest_pick.set_visible(False)
         self._destination_row.add_suffix(dest_pick)
         self._dest_pick_button = dest_pick
+        self._destination_row.connect("changed", self._schedule_remote_check)
         paths.add(self._destination_row)
 
         self._custom_command_row = Adw.EntryRow(title="Custom command (space-separated)")
@@ -110,6 +119,39 @@ class JobFormDialog(Adw.Dialog):
 
         self._extra_args_row = Adw.EntryRow(title="Extra arguments (space-separated)")
         paths.add(self._extra_args_row)
+
+        self._remote_hint_label = Gtk.Label(label="")
+        self._remote_hint_label.add_css_class("pereprava-hint-warning")
+        self._remote_hint_label.set_wrap(True)
+        self._remote_hint_label.set_xalign(0.0)
+        self._remote_hint_label.set_margin_start(8)
+        self._remote_hint_label.set_margin_top(4)
+        self._remote_hint_label.set_visible(False)
+        paths.add(self._remote_hint_label)
+
+        test_job_row = Adw.ActionRow(title="Test (dry run)")
+        test_job_row.set_subtitle("Preview what this job would do — nothing is changed")
+        self._test_job_button = Gtk.Button(label="Test")
+        self._test_job_button.set_valign(Gtk.Align.CENTER)
+        self._test_job_button.connect("clicked", self._on_test_job)
+        test_job_row.add_suffix(self._test_job_button)
+        paths.add(test_job_row)
+
+        self._test_result_view = Gtk.TextView()
+        self._test_result_view.set_editable(False)
+        self._test_result_view.set_monospace(True)
+        self._test_result_view.set_cursor_visible(False)
+        self._test_result_view.set_left_margin(8)
+        self._test_result_view.set_top_margin(6)
+        self._test_result_view.set_bottom_margin(6)
+        test_result_scroll = Gtk.ScrolledWindow()
+        test_result_scroll.set_min_content_height(110)
+        test_result_scroll.set_max_content_height(110)
+        test_result_scroll.set_child(self._test_result_view)
+        test_result_scroll.add_css_class("card")
+        test_result_scroll.set_visible(False)
+        self._test_result_scroll = test_result_scroll
+        paths.add(test_result_scroll)
 
         # --- Safety ---
         safety = Adw.PreferencesGroup(title="Safety")
@@ -247,6 +289,7 @@ class JobFormDialog(Adw.Dialog):
             self._refresh_linger_banner()
 
         self._update_destructive_ui()
+        self._schedule_remote_check()
 
     def _on_preset_changed(self, *_args) -> None:
         is_custom = self._selected_preset() == "custom"
@@ -347,6 +390,67 @@ class JobFormDialog(Adw.Dialog):
             self._linger_banner.set_title(
                 "Couldn't enable lingering — run `loginctl enable-linger` yourself"
             )
+
+    def _on_dialog_closed(self, *_args) -> None:
+        if self._remote_check_source_id is not None:
+            GLib.source_remove(self._remote_check_source_id)
+            self._remote_check_source_id = None
+
+    def _schedule_remote_check(self, *_args) -> None:
+        if self._remote_check_source_id is not None:
+            GLib.source_remove(self._remote_check_source_id)
+        self._remote_check_source_id = GLib.timeout_add(
+            _REMOTE_CHECK_DEBOUNCE_MS, self._check_remote_field
+        )
+
+    def _check_remote_field(self) -> bool:
+        self._remote_check_source_id = None
+        job_type = self._selected_type()
+
+        text = None
+        if job_type == JobType.RCLONE_MOUNT:
+            text = self._source_row.get_text().strip()
+        elif job_type in _RCLONE_TYPES:
+            text = self._destination_row.get_text().strip()
+
+        if not text or ":" not in text:
+            self._remote_hint_label.set_visible(False)
+            return GLib.SOURCE_REMOVE
+
+        remote = text.split(":", 1)[0] + ":"
+        remotes = list_remotes()
+        if not remotes:
+            self._remote_hint_label.set_text(
+                "No configured rclone remotes found — check `rclone listremotes`."
+            )
+            self._remote_hint_label.set_visible(True)
+        elif remote not in remotes:
+            self._remote_hint_label.set_text(
+                f"Remote “{remote}” isn't in `rclone listremotes` — check the name or configure it first."
+            )
+            self._remote_hint_label.set_visible(True)
+        else:
+            self._remote_hint_label.set_visible(False)
+
+        return GLib.SOURCE_REMOVE
+
+    def _on_test_job(self, _button) -> None:
+        job = self._build_job()
+        self._test_job_button.set_sensitive(False)
+        self._test_result_scroll.set_visible(True)
+        self._test_result_view.get_buffer().set_text("Testing…")
+
+        def worker() -> None:
+            ok, message = dry_run.test_job(job)
+            GLib.idle_add(self._on_test_job_done, ok, message)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_test_job_done(self, ok: bool, message: str) -> bool:
+        self._test_job_button.set_sensitive(True)
+        prefix = "✓ " if ok else "✗ "
+        self._test_result_view.get_buffer().set_text(prefix + message)
+        return GLib.SOURCE_REMOVE
 
     def _on_test_schedule(self, _button) -> None:
         value = self._custom_calendar_row.get_text() if self._custom_calendar_row.get_visible() else preset_to_on_calendar(self._selected_preset())
