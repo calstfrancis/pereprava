@@ -1,27 +1,27 @@
-# Pereprava v0.6.0 "Still Waters"
+# Pereprava v0.6.1 "Open Passage"
 
 **Released:** 2026-07-15
 
 ## What's new
 
-- **Runs in the background.** Closing the window now hides it instead of quitting —
-  monitoring, notifications, and scheduled jobs all keep going. Re-launch the app (or
-  its desktop icon) to bring the window back; Ctrl+Q actually quits.
-- **Optional system tray icon**, reflecting overall job health (OK vs. needs
-  attention), via AppIndicator if it's installed. Best-effort: native on KDE/XFCE; on
-  GNOME it needs the separate "AppIndicator and KStatusNotifierItem Support" shell
-  extension, since GNOME ships no tray by default. No dropdown menu — the window is
-  still how you interact with jobs.
-- **Fixed:** mount jobs now clear a stray `.directory` file (KDE/Dolphin's hidden
-  folder-view metadata) from the destination before every mount attempt, which could
-  otherwise trip rclone's "destination must be empty" check on an entirely empty
-  folder you'd just created for the mount.
+A small follow-up release, fixing a genuine dead end in the "needs repair" flow:
+
+- **"Repair" actually repairs now.** It used to respect whatever `enabled` state was
+  already stored on the job — so a job that had been paused (e.g. to stop a mount's
+  retry loop while troubleshooting) and then had its unit garbage-collected by systemd
+  would show up as "needs repair," but clicking Repair just called `disable_now` on a
+  unit that wasn't even loaded: a no-op that reported success while changing nothing.
+  Repair now forces the job back to enabled, so it actually tries to start again.
+- **The "needs repair" row has Edit and Delete now, not just Repair** — previously, a
+  job stuck in that state with no way for Repair alone to fix it (a bad path, a wrong
+  remote name) had no way to be changed or removed at all.
 
 See [CHANGELOG.md](CHANGELOG.md) for everything since the last release, including
-v0.5.0 "Steady Current" (live transfer progress) and v0.4.0 "Third Crossing"
-(`rclone check`, bandwidth limits, include/exclude filters, pre/post-run hooks,
-conditional scheduling, job duplication, one-click restore, per-job run history,
-guided encrypted-remote setup, and remote quota display).
+v0.6.0 "Still Waters" (background persistence, optional tray icon, a mount-point fix),
+v0.5.0 "Steady Current" (live transfer progress), and v0.4.0 "Third Crossing" (`rclone
+check`, bandwidth limits, include/exclude filters, pre/post-run hooks, conditional
+scheduling, job duplication, one-click restore, per-job run history, guided
+encrypted-remote setup, and remote quota display).
 
 ## Download
 
@@ -35,10 +35,10 @@ path access, both of which fight the flatpak sandbox model.
 ## Installation
 
 ```bash
-curl -L -o pereprava-0.6.0.tar.gz \
-  https://github.com/calstfrancis/pereprava/archive/refs/tags/v0.6.0.tar.gz
-tar xzf pereprava-0.6.0.tar.gz
-cd pereprava-0.6.0
+curl -L -o pereprava-0.6.1.tar.gz \
+  https://github.com/calstfrancis/pereprava/archive/refs/tags/v0.6.1.tar.gz
+tar xzf pereprava-0.6.1.tar.gz
+cd pereprava-0.6.1
 ./install.sh
 pereprava
 ```

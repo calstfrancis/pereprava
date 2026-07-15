@@ -333,9 +333,29 @@ def build_discrepancy_row(disc: Discrepancy, callbacks: dict) -> Adw.ActionRow:
         row.set_title(disc.slug)
         row.set_subtitle("Job definition exists but its systemd units are missing")
         row.add_prefix(Gtk.Image.new_from_icon_name("dialog-warning-symbolic"))
-        button = Gtk.Button(label="Repair")
-        button.add_css_class("flat")
-        button.connect("clicked", lambda _b: callbacks["on_repair"](disc.slug))
-        row.add_suffix(button)
+
+        suffix = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+
+        repair_button = Gtk.Button(label="Repair")
+        repair_button.add_css_class("flat")
+        repair_button.connect("clicked", lambda _b: callbacks["on_repair"](disc.slug))
+        suffix.append(repair_button)
+
+        # Repair alone used to be a dead end for a job whose JSON still exists
+        # but that can't be fixed by re-enabling it (e.g. a bad path/remote) —
+        # there was no way to change or give up on it from this row at all.
+        edit_button = Gtk.Button(icon_name="document-edit-symbolic")
+        edit_button.add_css_class("flat")
+        edit_button.set_tooltip_text("Edit")
+        edit_button.connect("clicked", lambda _b: callbacks["on_edit"](disc.slug))
+        suffix.append(edit_button)
+
+        delete_button = Gtk.Button(icon_name="user-trash-symbolic")
+        delete_button.add_css_class("flat")
+        delete_button.set_tooltip_text("Delete")
+        delete_button.connect("clicked", lambda _b: callbacks["on_delete"](disc.slug))
+        suffix.append(delete_button)
+
+        row.add_suffix(suffix)
     row.set_activatable(False)
     return row

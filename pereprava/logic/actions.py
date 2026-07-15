@@ -72,7 +72,19 @@ def run_now(slug: str) -> tuple[bool, str]:
 
 
 def repair_units(job: Job) -> tuple[bool, str]:
-    """Regenerate units for a job whose JSON exists but whose units went missing."""
+    """Regenerate units for a job whose JSON exists but whose units went missing.
+
+    Forces enabled=True regardless of the job's stored state. A job showing up
+    as "needs repair" is being surfaced as broken and in need of fixing — if
+    it was previously paused and its unit had since been garbage-collected by
+    systemd (so "needs repair" is how a paused-then-GC'd job actually
+    presents), respecting the stored disabled state here would just call
+    disable_now on a unit that isn't loaded — a no-op that reports success
+    while changing nothing, leaving the discrepancy stuck forever with no way
+    out via this button. Pause it again from the normal row afterward if you
+    didn't want it running.
+    """
+    job.enabled = True
     return save_and_apply(job)
 
 

@@ -222,6 +222,8 @@ class AppWindow(Adw.ApplicationWindow):
         disc_callbacks = {
             "on_remove_unmanaged": self._on_remove_unmanaged,
             "on_repair": self._on_repair,
+            "on_edit": self._on_edit,
+            "on_delete": self._on_delete,
         }
         for disc in discrepancies:
             self._list_box.append(build_discrepancy_row(disc, disc_callbacks))

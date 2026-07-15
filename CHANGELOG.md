@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.1] "Open Passage" — 2026-07-15
+
+### Fixed
+- "Repair" on a needs-repair job now forces it back to enabled, instead of respecting whatever `enabled` state was already stored — a previously-paused job whose unit had since been garbage-collected by systemd showed as "needs repair" the same as a genuinely broken one, but Repair would just call `disable_now` on a unit that wasn't even loaded: a no-op that reported success while changing nothing, leaving the discrepancy permanently stuck
+- The "needs repair" discrepancy row now has Edit and Delete buttons, not just Repair — previously a job stuck in that state (e.g. one with a bad path/remote that Repair alone can't fix) had no way to be changed or removed at all
+
 ## [0.6.0] "Still Waters" — 2026-07-15
 
 ### Added
