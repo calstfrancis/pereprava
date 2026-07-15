@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.5.0] "Steady Current" — 2026-07-15
+
+### Added
+- Live progress display for `rclone copy`/`sync`/`bisync`/`check` jobs — an opt-in "Show live progress" toggle in the Add/Edit form starts rclone's own `--rc` control API on a loopback-only port (auto-allocated, one per job) and the job list polls it every 1.5s for real transfer stats (percent, speed, ETA) or check counts, shown as a slim progress bar + caption in place of the plain status label while the job is running. Off by default and not offered for `rsync`/`custom`/mount, since rsync has no equivalent control API and mount has no discrete "done" point to show progress toward
+
 ## [0.4.0] "Third Crossing" — 2026-07-15
 
 ### Added

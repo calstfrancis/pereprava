@@ -3,6 +3,7 @@ left, status + timing right-aligned, actions in a hand-built popover menu."""
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timedelta
 from typing import Callable
 
@@ -10,11 +11,15 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, GLib, Gtk
 
 from pereprava.logic.discovery import JobEntry
-from pereprava.model.job import JobType
+from pereprava.logic.rc import RC_CAPABLE_TYPES
+from pereprava.model.job import Job, JobType
 from pereprava.model.status import Discrepancy, DiscrepancyKind, RunState
+from pereprava.storage.rc_client import fetch_stats
+
+_RC_POLL_INTERVAL_MS = 1500
 
 _TYPE_ICON = {
     JobType.RCLONE_COPY: "folder-remote-symbolic",
@@ -90,6 +95,93 @@ def status_text(entry: JobEntry) -> str:
             base += f" · next {_relative(status.next_run, future=True)}"
         return base
     return "Never run"
+
+
+def _format_speed(bytes_per_sec: float) -> str:
+    for unit in ("B/s", "KB/s", "MB/s", "GB/s"):
+        if abs(bytes_per_sec) < 1024 or unit == "GB/s":
+            return f"{bytes_per_sec:.1f} {unit}"
+        bytes_per_sec /= 1024
+    return f"{bytes_per_sec:.1f} GB/s"
+
+
+def _format_eta(seconds) -> str:
+    if not seconds or seconds <= 0:
+        return ""
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, secs = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m{secs:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m"
+
+
+def _build_progress_widget(job: Job) -> Gtk.Box:
+    """Live progress for a running rclone job, polled from its --rc server
+    (see logic/rc.py, storage/rc_client.py) — real transfer stats, not a
+    guess. Self-contained: owns its own poll timer and cleans it up when the
+    row is destroyed (the whole list gets rebuilt on every refresh tick)."""
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+    box.set_valign(Gtk.Align.CENTER)
+    box.set_size_request(120, -1)
+
+    label = Gtk.Label(label="Starting…")
+    label.add_css_class("caption")
+    label.add_css_class("dim-label")
+    label.set_xalign(1.0)
+    box.append(label)
+
+    bar = Gtk.ProgressBar()
+    bar.set_show_text(False)
+    bar.add_css_class("pereprava-progress-bar")
+    box.append(bar)
+
+    in_flight = [False]
+
+    def apply_stats(stats: dict | None) -> bool:
+        in_flight[0] = False
+        if stats is None:
+            return GLib.SOURCE_REMOVE
+        if job.job_type == JobType.RCLONE_CHECK:
+            done, total = stats.get("checks", 0), stats.get("totalChecks", 0)
+            if total:
+                bar.set_fraction(min(done / total, 1.0))
+                label.set_text(f"{done}/{total} checked")
+            else:
+                bar.pulse()
+                label.set_text(f"{done} checked")
+            return GLib.SOURCE_REMOVE
+        done, total = stats.get("bytes", 0), stats.get("totalBytes", 0)
+        speed = stats.get("speed", 0)
+        if total:
+            pct = done / total * 100
+            bar.set_fraction(min(done / total, 1.0))
+            eta_text = _format_eta(stats.get("eta"))
+            suffix = f" · ETA {eta_text}" if eta_text else ""
+            label.set_text(f"{pct:.0f}% · {_format_speed(speed)}{suffix}")
+        else:
+            bar.pulse()
+            label.set_text(_format_speed(speed) if speed else "Starting…")
+        return GLib.SOURCE_REMOVE
+
+    def poll() -> bool:
+        if in_flight[0]:
+            return GLib.SOURCE_CONTINUE
+        in_flight[0] = True
+
+        def worker() -> None:
+            stats = fetch_stats(job.rc_port)
+            GLib.idle_add(apply_stats, stats)
+
+        threading.Thread(target=worker, daemon=True).start()
+        return GLib.SOURCE_CONTINUE
+
+    timer_id = GLib.timeout_add(_RC_POLL_INTERVAL_MS, poll)
+    poll()
+    box.connect("destroy", lambda *_a: GLib.source_remove(timer_id))
+    return box
 
 
 def build_menu_button(
@@ -175,10 +267,16 @@ def build_job_row(entry: JobEntry, callbacks: dict) -> Adw.ActionRow:
         warn.set_tooltip_text("This job can delete files at the destination")
         suffix.append(warn)
 
-    status_label = Gtk.Label(label=status_text(entry))
-    status_label.add_css_class(_STATE_CSS[entry.status.state])
-    status_label.add_css_class("dim-label")
-    suffix.append(status_label)
+    show_progress = (
+        job.rc_port > 0 and job.job_type in RC_CAPABLE_TYPES and entry.status.state == RunState.RUNNING
+    )
+    if show_progress:
+        suffix.append(_build_progress_widget(job))
+    else:
+        status_label = Gtk.Label(label=status_text(entry))
+        status_label.add_css_class(_STATE_CSS[entry.status.state])
+        status_label.add_css_class("dim-label")
+        suffix.append(status_label)
 
     suffix.append(
         build_menu_button(

@@ -52,6 +52,11 @@ CSS = """
     color: @accent_color;
     font-size: 0.7em;
 }
+.pereprava-progress-bar,
+.pereprava-progress-bar trough,
+.pereprava-progress-bar progress {
+    min-height: 4px;
+}
 """
 
 

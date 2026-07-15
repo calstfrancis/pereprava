@@ -78,6 +78,7 @@ class Job:
     post_hook: str = ""
     condition_ac_power: bool = False
     condition_ssid: str = ""
+    rc_port: int = 0  # >0 means rclone --rc live-progress is enabled on this port
     custom_command: list[str] | None = None
     rsync_delete: bool = False
     enabled: bool = True
@@ -119,6 +120,7 @@ class Job:
             "post_hook": self.post_hook,
             "condition_ac_power": self.condition_ac_power,
             "condition_ssid": self.condition_ssid,
+            "rc_port": self.rc_port,
             "custom_command": self.custom_command,
             "rsync_delete": self.rsync_delete,
             "schedule": self.schedule.to_dict(),
@@ -142,6 +144,7 @@ class Job:
             post_hook=data.get("post_hook", ""),
             condition_ac_power=data.get("condition_ac_power", False),
             condition_ssid=data.get("condition_ssid", ""),
+            rc_port=data.get("rc_port", 0),
             custom_command=data.get("custom_command"),
             rsync_delete=data.get("rsync_delete", False),
             schedule=Schedule.from_dict(data.get("schedule", {})),

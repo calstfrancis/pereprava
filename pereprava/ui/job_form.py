@@ -15,12 +15,13 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk
 
 from pereprava.logic import dry_run
+from pereprava.logic.rc import RC_CAPABLE_TYPES, allocate_port
 from pereprava.logic.schedule import PRESET_LABELS, preset_to_on_calendar, validate_on_calendar
 from pereprava.logic.slug import unique_slug
 from pereprava.logic.validation import validate_job
 from pereprava.model.job import JOB_TYPE_LABELS, Job, JobType, Schedule
 from pereprava.storage import linger
-from pereprava.storage.jobs_store import list_job_slugs
+from pereprava.storage.jobs_store import list_job_slugs, load_all_jobs
 from pereprava.storage.rclone import list_remotes
 from pereprava.ui.remote_browser import RemoteBrowserDialog
 
@@ -144,6 +145,13 @@ class JobFormDialog(Adw.Dialog):
             "time-of-day schedule (rclone jobs only — rsync only supports a flat rate)"
         )
         paths.add(self._bwlimit_row)
+
+        self._rc_progress_row = Adw.SwitchRow(title="Show live progress")
+        self._rc_progress_row.set_tooltip_text(
+            "Starts rclone's own --rc control API on a local, loopback-only port "
+            "(chosen automatically) so the job list can show real transfer progress"
+        )
+        paths.add(self._rc_progress_row)
 
         self._extra_args_row = Adw.EntryRow(title="Extra arguments (space-separated)")
         paths.add(self._extra_args_row)
@@ -310,6 +318,7 @@ class JobFormDialog(Adw.Dialog):
         self._excludes_row.set_text(shlex.join(job.excludes))
         self._includes_row.set_text(shlex.join(job.includes))
         self._bwlimit_row.set_text(job.bwlimit)
+        self._rc_progress_row.set_active(job.rc_port > 0)
         self._extra_args_row.set_text(shlex.join(job.extra_args))
         self._pre_hook_row.set_text(job.pre_hook)
         self._post_hook_row.set_text(job.post_hook)
@@ -336,6 +345,7 @@ class JobFormDialog(Adw.Dialog):
         self._excludes_row.set_visible(job_type != JobType.CUSTOM)
         self._includes_row.set_visible(job_type != JobType.CUSTOM)
         self._bwlimit_row.set_visible(job_type != JobType.CUSTOM)
+        self._rc_progress_row.set_visible(job_type in RC_CAPABLE_TYPES)
         self._rsync_delete_row.set_visible(job_type == JobType.RSYNC)
         self._dest_browse_button.set_visible(job_type in _RCLONE_TYPES)
         self._safety_group.set_visible(job_type not in _NEVER_DESTRUCTIVE_TYPES)
@@ -554,6 +564,16 @@ class JobFormDialog(Adw.Dialog):
         self._schedule_preview_row.set_visible(True)
         self._schedule_preview_row.set_title(message if ok else f"Invalid: {message}")
 
+    def _resolve_rc_port(self, job_type: JobType) -> int:
+        """0 if live progress isn't enabled/applicable; otherwise the existing
+        port when editing (stable across saves) or a freshly allocated one."""
+        if not self._rc_progress_row.get_active() or job_type not in RC_CAPABLE_TYPES:
+            return 0
+        if self._editing and self._editing.rc_port:
+            return self._editing.rc_port
+        taken = {j.rc_port for j in load_all_jobs() if j.rc_port}
+        return allocate_port(taken)
+
     def _build_job(self) -> Job:
         job_type = self._selected_type()
         name = self._name_row.get_text().strip()
@@ -574,6 +594,7 @@ class JobFormDialog(Adw.Dialog):
             excludes=shlex.split(self._excludes_row.get_text()) if job_type != JobType.CUSTOM else [],
             includes=shlex.split(self._includes_row.get_text()) if job_type != JobType.CUSTOM else [],
             bwlimit=self._bwlimit_row.get_text().strip() if job_type != JobType.CUSTOM else "",
+            rc_port=self._resolve_rc_port(job_type),
             pre_hook=self._pre_hook_row.get_text().strip(),
             post_hook=self._post_hook_row.get_text().strip(),
             condition_ac_power=self._ac_power_row.get_active(),

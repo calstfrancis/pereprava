@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pereprava.logic.rc import RC_CAPABLE_TYPES
 from pereprava.model.job import Job, JobType
 
 RCLONE_BIN = "/usr/bin/rclone"
@@ -34,8 +35,18 @@ def _bwlimit_flags(job: Job) -> list[str]:
     return ["--bwlimit", job.bwlimit.strip()]
 
 
+def _rc_flags(job: Job) -> list[str]:
+    """--rc starts rclone's JSON-RPC control server for this run, loopback-only
+    and unauthenticated (127.0.0.1 only — never expose this beyond localhost).
+    Lets the UI poll real transfer stats for a live progress display instead
+    of guessing from log output."""
+    if job.rc_port and job.job_type in RC_CAPABLE_TYPES:
+        return ["--rc", "--rc-no-auth", "--rc-addr", f"127.0.0.1:{job.rc_port}"]
+    return []
+
+
 def _filter_flags(job: Job) -> list[str]:
-    return [*_exclude_flags(job), *_include_flags(job), *_bwlimit_flags(job)]
+    return [*_exclude_flags(job), *_include_flags(job), *_bwlimit_flags(job), *_rc_flags(job)]
 
 
 def build_argv(job: Job) -> list[str]:
