@@ -1,19 +1,27 @@
-# Pereprava v0.5.0 "Steady Current"
+# Pereprava v0.6.0 "Still Waters"
 
 **Released:** 2026-07-15
 
 ## What's new
 
-- **Live transfer progress.** An opt-in "Show live progress" toggle on `rclone
-  copy`/`sync`/`bisync`/`check` jobs starts rclone's own `--rc` control API
-  (loopback-only, one auto-allocated port per job) and polls it every 1.5s for real
-  percent/speed/ETA (or check counts), shown as a slim progress bar in the job list
-  instead of a plain "Running…" label.
+- **Runs in the background.** Closing the window now hides it instead of quitting —
+  monitoring, notifications, and scheduled jobs all keep going. Re-launch the app (or
+  its desktop icon) to bring the window back; Ctrl+Q actually quits.
+- **Optional system tray icon**, reflecting overall job health (OK vs. needs
+  attention), via AppIndicator if it's installed. Best-effort: native on KDE/XFCE; on
+  GNOME it needs the separate "AppIndicator and KStatusNotifierItem Support" shell
+  extension, since GNOME ships no tray by default. No dropdown menu — the window is
+  still how you interact with jobs.
+- **Fixed:** mount jobs now clear a stray `.directory` file (KDE/Dolphin's hidden
+  folder-view metadata) from the destination before every mount attempt, which could
+  otherwise trip rclone's "destination must be empty" check on an entirely empty
+  folder you'd just created for the mount.
 
 See [CHANGELOG.md](CHANGELOG.md) for everything since the last release, including
-v0.4.0 "Third Crossing" (`rclone check`, bandwidth limits, include/exclude filters,
-pre/post-run hooks, conditional scheduling, job duplication, one-click restore,
-per-job run history, guided encrypted-remote setup, and remote quota display).
+v0.5.0 "Steady Current" (live transfer progress) and v0.4.0 "Third Crossing"
+(`rclone check`, bandwidth limits, include/exclude filters, pre/post-run hooks,
+conditional scheduling, job duplication, one-click restore, per-job run history,
+guided encrypted-remote setup, and remote quota display).
 
 ## Download
 
@@ -27,10 +35,10 @@ path access, both of which fight the flatpak sandbox model.
 ## Installation
 
 ```bash
-curl -L -o pereprava-0.5.0.tar.gz \
-  https://github.com/calstfrancis/pereprava/archive/refs/tags/v0.5.0.tar.gz
-tar xzf pereprava-0.5.0.tar.gz
-cd pereprava-0.5.0
+curl -L -o pereprava-0.6.0.tar.gz \
+  https://github.com/calstfrancis/pereprava/archive/refs/tags/v0.6.0.tar.gz
+tar xzf pereprava-0.6.0.tar.gz
+cd pereprava-0.6.0
 ./install.sh
 pereprava
 ```

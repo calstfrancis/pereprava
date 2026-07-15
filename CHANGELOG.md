@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.0] "Still Waters" — 2026-07-15
+
+### Added
+- The app now keeps running/monitoring in the background when the window is closed, instead of quitting — closing hides the window rather than destroying it; re-launching the app (or its desktop icon) re-presents the same window. Ctrl+Q actually quits
+- Optional system tray icon reflecting overall job health (OK vs. needs attention), via AppIndicator (Ayatana's maintained fork preferred, falling back to the original) if installed. Best-effort only: on GNOME it needs the separate "AppIndicator and KStatusNotifierItem Support" extension (GNOME ships no tray by default); on KDE/XFCE it works natively. No dropdown menu — AppIndicator's menu API wants a GTK3 widget, which can't coexist in this GTK4 app's process, so the icon is status-only; the window is still how you interact with jobs
+
+### Fixed
+- Mount jobs now strip a stray `.directory` file from the destination before every mount attempt — KDE/Dolphin (and its file-open portal) write this hidden view-metadata file into essentially any folder they touch, including one freshly created through Pereprava's own mount-point folder picker moments earlier, which was enough on its own to trip rclone's "destination must be empty" safety check on an otherwise genuinely empty folder and send the mount into an endless `Restart=on-failure` retry loop
+
 ## [0.5.0] "Steady Current" — 2026-07-15
 
 ### Added

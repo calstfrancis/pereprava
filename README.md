@@ -35,6 +35,9 @@ acknowledgment before it can be saved.
 - Desktop notifications the moment a job or mount transitions into a failed state
 - Export/import job definitions as a single JSON file, for backup or moving to another
   machine
+- Keeps monitoring in the background when the window is closed (Ctrl+Q to actually
+  quit), with an optional system tray icon reflecting overall job health if
+  AppIndicator is installed — see [Requirements](#requirements)
 
 ## Requirements
 
@@ -50,6 +53,10 @@ acknowledgment before it can be saved.
   OAuth login via `rclone authorize`)
 - `nmcli` (NetworkManager), only if you use the "only run on this Wi-Fi network"
   scheduling condition
+- `gir1.2-ayatanaappindicator3-0.1` (or `gir1.2-appindicator3-0.1`), only for the
+  optional system tray icon — and on GNOME, the separate "AppIndicator and
+  KStatusNotifierItem Support" shell extension, since GNOME ships no tray by default.
+  Without either, the app runs exactly the same, just without a tray icon
 
 ## Installing
 

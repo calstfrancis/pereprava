@@ -20,6 +20,18 @@ def _mkdir_cmd(path: str) -> str:
     return shlex.join(["/usr/bin/mkdir", "-p", path or "."])
 
 
+def _strip_directory_metadata_cmd(destination: str) -> str:
+    """rm -f <destination>/.directory — KDE/Dolphin (and its file-open portal)
+    write this hidden view-metadata file into essentially any folder they
+    touch, including one freshly created moments ago through Pereprava's own
+    folder picker for exactly this mount. It's always safe to remove (KDE
+    just regenerates it) but is enough on its own to make rclone's "mount
+    destination must be empty" safety check misfire on an otherwise-genuinely-
+    empty folder. Runs before every mount attempt, not just once, so it's
+    self-healing if the desktop re-creates the file later too."""
+    return shlex.join(["/usr/bin/rm", "-f", os.path.join(destination, ".directory")])
+
+
 def _shell_cmd(hook: str) -> str | None:
     """Wrap a user-provided hook string in /bin/sh -c so shell features (&&, |,
     env vars) work, unlike the main ExecStart which runs argv directly with no
@@ -72,6 +84,7 @@ def render_service_unit(job: Job) -> str:
         # once mounted. No ExecStop: rclone mount unmounts cleanly on SIGTERM,
         # which avoids hardcoding a fusermount/fusermount3 path that varies by distro.
         mkdir_cmd = _mkdir_cmd(job.destination)
+        strip_metadata_cmd = _strip_directory_metadata_cmd(job.destination)
         log_mkdir_cmd = _mkdir_cmd(os.path.dirname(job.log_path))
         return (
             header
@@ -85,6 +98,7 @@ def render_service_unit(job: Job) -> str:
             + "Type=notify\n"
             + exec_condition_line
             + f"ExecStartPre={mkdir_cmd}\n"
+            + f"ExecStartPre={strip_metadata_cmd}\n"
             + f"ExecStartPre={log_mkdir_cmd}\n"
             + pre_hook_line
             + f"ExecStart={exec_start}\n"

@@ -21,6 +21,7 @@ from pereprava.ui.history_view import HistoryViewDialog
 from pereprava.ui.job_form import JobFormDialog
 from pereprava.ui.job_row import build_discrepancy_row, build_job_row, build_section_header
 from pereprava.ui.log_view import LogViewDialog
+from pereprava.ui import tray
 from pereprava.storage import app_state, history, logs
 from pereprava.storage.jobs_store import list_job_slugs, load_job
 
@@ -41,10 +42,18 @@ class AppWindow(Adw.ApplicationWindow):
         self.set_title("Pereprava")
         self.set_default_size(760, 600)
 
-        self._is_active = True
+        # Keep monitoring/notifying in the background instead of quitting
+        # when the window closes — hold() keeps the GApplication alive
+        # regardless of window state; close-request hides rather than
+        # destroys so re-launching the app (GApplication is single-instance)
+        # re-presents the same window instead of starting fresh.
+        application.hold()
+        self.connect("close-request", self._on_close_request)
+
+        self._indicator = tray.create_indicator()
+
         self._auto_refresh_enabled = True
         self._last_states: dict[str, RunState] = {}
-        self.connect("notify::is-active", self._on_is_active_changed)
 
         self._toast_overlay = Adw.ToastOverlay()
         self.set_content(self._toast_overlay)
@@ -82,8 +91,12 @@ class AppWindow(Adw.ApplicationWindow):
         refresh_action = Gio.SimpleAction.new("refresh", None)
         refresh_action.connect("activate", lambda *_a: self.refresh())
         self.add_action(refresh_action)
+        quit_action = Gio.SimpleAction.new("quit", None)
+        quit_action.connect("activate", lambda *_a: application.quit())
+        self.add_action(quit_action)
         application.set_accels_for_action("win.add-job", ["<Control>n"])
         application.set_accels_for_action("win.refresh", ["<Control>r"])
+        application.set_accels_for_action("win.quit", ["<Control>q"])
 
         self._stack = Gtk.Stack()
         toolbar_view.set_content(self._stack)
@@ -121,7 +134,8 @@ class AppWindow(Adw.ApplicationWindow):
         self._auto_refresh_btn.add_css_class("flat")
         self._auto_refresh_btn.add_css_class("status-toggle")
         self._auto_refresh_btn.set_tooltip_text(
-            "Automatically refresh job status every 8 seconds while the window is focused"
+            "Automatically refresh job status every 8 seconds, including in the "
+            "background after closing the window (Ctrl+Q to actually quit)"
         )
         self._auto_refresh_btn.connect("clicked", self._on_auto_refresh_clicked)
         _set_toggle_label(self._auto_refresh_btn, "auto-refresh", self._auto_refresh_enabled)
@@ -153,11 +167,16 @@ class AppWindow(Adw.ApplicationWindow):
             app_state.set_last_seen_version(_APP_VERSION)
         return GLib.SOURCE_REMOVE
 
-    def _on_is_active_changed(self, *_args) -> None:
-        self._is_active = self.is_active()
+    def _on_close_request(self, *_args) -> bool:
+        """Hide instead of close, so monitoring/notifications keep running in
+        the background — application.hold() in __init__ keeps the process
+        alive regardless. Re-launching the app (GApplication is
+        single-instance) re-presents this same window via on_activate."""
+        self.set_visible(False)
+        return True  # stop the default close/destroy behavior
 
     def _on_refresh_tick(self) -> bool:
-        if self._is_active and self._auto_refresh_enabled:
+        if self._auto_refresh_enabled:
             self.refresh()
         return True  # keep the timeout registered
 
@@ -168,6 +187,7 @@ class AppWindow(Adw.ApplicationWindow):
     def refresh(self) -> None:
         entries, discrepancies = discovery.scan()
         self._notify_on_failures(entries)
+        tray.update_indicator(self._indicator, entries)
         for entry in entries:
             logs.rotate_if_needed(entry.job.log_path)
             if not entry.job.is_mount:
