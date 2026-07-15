@@ -10,8 +10,17 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk
 
-from pereprava.storage.rclone import list_dirs, list_remotes
+from pereprava.storage.rclone import get_about, list_dirs, list_remotes
+from pereprava.ui.crypt_setup import CryptSetupDialog
 from pereprava.ui.pcloud_setup import PcloudSetupDialog
+
+
+def _format_bytes(n: float) -> str:
+    for unit in ("B", "KB", "MB", "GB", "TB", "PB"):
+        if abs(n) < 1024 or unit == "PB":
+            return f"{n:.1f} {unit}" if unit != "B" else f"{n:.0f} {unit}"
+        n /= 1024
+    return f"{n:.1f} PB"
 
 
 class RemoteBrowserDialog(Adw.Dialog):
@@ -51,10 +60,22 @@ class RemoteBrowserDialog(Adw.Dialog):
         self._remotes = remotes
         content.append(self._remote_row)
 
+        add_buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        add_buttons.set_halign(Gtk.Align.START)
         add_pcloud_button = Gtk.Button(label="Add pCloud Remote…")
-        add_pcloud_button.set_halign(Gtk.Align.START)
         add_pcloud_button.connect("clicked", self._on_add_pcloud_remote)
-        content.append(add_pcloud_button)
+        add_buttons.append(add_pcloud_button)
+        add_crypt_button = Gtk.Button(label="Add Encrypted Remote…")
+        add_crypt_button.connect("clicked", self._on_add_crypt_remote)
+        add_buttons.append(add_crypt_button)
+        content.append(add_buttons)
+
+        self._quota_label = Gtk.Label(label="")
+        self._quota_label.set_xalign(0.0)
+        self._quota_label.add_css_class("dim-label")
+        self._quota_label.add_css_class("caption")
+        self._quota_label.set_visible(False)
+        content.append(self._quota_label)
 
         self._path_label = Gtk.Label(label="/")
         self._path_label.set_xalign(0.0)
@@ -80,26 +101,46 @@ class RemoteBrowserDialog(Adw.Dialog):
 
         self._path = ""
         self._refresh()
+        self._update_quota_label()
+
+    def _on_remote_created(self, name: str) -> None:
+        remotes = list_remotes()
+        self._remotes = remotes
+        self._remote_row.set_model(Gtk.StringList.new(remotes or ["(no remotes configured)"]))
+        new_remote = f"{name}:"
+        if new_remote in remotes:
+            self._remote = new_remote
+            self._remote_row.set_selected(remotes.index(new_remote))
+        self._path = ""
+        self._refresh()
+        self._update_quota_label()
 
     def _on_add_pcloud_remote(self, _button) -> None:
-        def on_created(name: str) -> None:
-            remotes = list_remotes()
-            self._remotes = remotes
-            self._remote_row.set_model(Gtk.StringList.new(remotes or ["(no remotes configured)"]))
-            new_remote = f"{name}:"
-            if new_remote in remotes:
-                self._remote = new_remote
-                self._remote_row.set_selected(remotes.index(new_remote))
-            self._path = ""
-            self._refresh()
+        PcloudSetupDialog(self._on_remote_created).present(self)
 
-        PcloudSetupDialog(on_created).present(self)
+    def _on_add_crypt_remote(self, _button) -> None:
+        CryptSetupDialog(self._on_remote_created).present(self)
 
     def _on_remote_changed(self, row, _pspec) -> None:
         if self._remotes:
             self._remote = self._remotes[row.get_selected()]
         self._path = ""
         self._refresh()
+        self._update_quota_label()
+
+    def _update_quota_label(self) -> None:
+        if not self._remote:
+            self._quota_label.set_visible(False)
+            return
+        about = get_about(self._remote)
+        if not about or "total" not in about or "used" not in about:
+            self._quota_label.set_visible(False)
+            return
+        total = about["total"]
+        used = about["used"]
+        pct = (used / total * 100) if total else 0
+        self._quota_label.set_text(f"{_format_bytes(used)} used of {_format_bytes(total)} ({pct:.0f}%)")
+        self._quota_label.set_visible(True)
 
     def _go_up(self) -> None:
         if not self._path:

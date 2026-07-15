@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.4.0] "Third Crossing" — 2026-07-15
+
+### Added
+- "Exclude folders/files" field in the Add/Edit form (space-separated glob patterns, quote ones with spaces) for `rclone copy`/`sync`/`bisync`/mount and `rsync` jobs — translates to repeated `--exclude PATTERN` flags, picked up automatically by the Test dry run since it goes through the same command-building code
+- "Include only folders/files" field, same shape as Exclude, applied after it in filter order
+- New `rclone check` job type — verifies source against destination without transferring anything, never destructive, shows up as a normal periodic job (OK/Failed) so drift gets caught and notified like any other failure
+- Bandwidth limit field (`--bwlimit`), including rclone's own time-of-day schedule syntax (e.g. `08:00,512k 20:00,10M`) — passed through as a single argument, not space-split like the other fields
+- Pre/post-run hook commands (shell one-liners, run via `/bin/sh -c` so `&&`/pipes/env vars work) — post-hook only fires if the main command succeeds, per stock systemd `ExecStartPost` semantics
+- Run Conditions: "only run on AC power" (`ConditionACPower=`) and "only run on this Wi-Fi network" (SSID, checked via `nmcli` through `ExecCondition=` so an unmet condition skips cleanly rather than counting as a failure)
+- "Duplicate…" job action — opens the Add/Edit form pre-filled with a copy (new slug/name/log path, paused) for review before saving, rather than silently creating a live second copy
+- "Restore…" job action (copy/sync/bisync/rsync only) — same pre-fill-and-review flow as Duplicate, but with source and destination swapped
+- "View History" per job — the last 50 runs (time, duration, success/failure), sourced from systemd's own start/exit timestamps rather than parsing rclone/rsync's log output, which isn't a stable format to depend on. Not tracked for mounts, which don't have discrete "runs"
+- Guided encrypted-remote setup ("Add Encrypted Remote…" in the remote browser) — wraps an existing remote:path in an `rclone crypt` remote via `rclone obscure` + non-interactive `rclone config create`, same shape as the pCloud OAuth wizard
+- Remote free-space/quota display in the remote browser (`rclone about --json`), shown for the selected remote when the backend supports it
+- A "Needs attention (N)" header now separates unmanaged-unit/needs-repair discrepancy rows from the healthy job list, instead of them blending in as more plain rows
+- The Add/Edit form's Test button, the log viewer's copy button, and Run Now all have matching polish: cancel support, a "Copied to clipboard" toast, and a proper error dialog on failure respectively
+- Ctrl+N (Add Job) and Ctrl+R (Refresh) keyboard shortcuts
+- The changelog window now also opens automatically once after an update (not just on demand via the version button), skipping the very first run
+
+### Changed
+- `rclone sync` jobs get their own row icon instead of sharing one with `rclone copy` — only `rclone bisync` did before
+- Job row subtitles now elide the middle of long source/destination paths individually (with the full text in a tooltip) instead of relying on a single trailing ellipsis that could hide an entire side
+- Job logs are capped at 5MB and truncated in place (keeping the most recent ~1MB) instead of growing forever — relevant for a mount job that keeps flapping and restarting every 10s
+
+### Fixed
+- Saving, pausing/resuming, repairing, deleting, running now, or bulk-importing a job now surfaces the actual `systemctl --user` error when the enable/disable/start step fails, instead of always reporting success — previously a job could silently end up in the "needs repair" state (JSON saved, unit never loaded) with no indication anything had gone wrong
+- The Add/Edit form's "Test" dry run no longer has a fixed timeout at all (was 30s, briefly tried 90s) — a real dry run against a big or deeply-nested remote (e.g. a large photo library) can legitimately take minutes, so there's no correct constant. Instead the dry run now runs in the background indefinitely with a Cancel button, same shape as the pCloud authorize flow
+- Removing an unmanaged unit now asks for confirmation first, matching the existing confirmation for deleting a managed job, instead of disabling and deleting it on a single click
+- The log viewer now scrolls to the most recent output on open/refresh instead of landing at the top of the file
+- `rclone copy`/`sync`/`bisync` and `rsync` jobs now always run with `-v` — neither tool prints anything on a quiet success when not attached to a terminal (which a systemd unit never is), so logs looked empty/broken even on jobs that ran fine. Existing jobs need a re-save (Edit → Save, or Repair) to pick up the new unit — Pereprava doesn't rewrite unit files on its own until the next explicit save
+- Both mount and periodic job units now `mkdir -p` the log file's directory before running, instead of assuming it already exists — a fresh install with no prior `~/.local/state/pereprava/` could otherwise fail to open the log at all
+
 ## [0.3.0] "Second Crossing" — 2026-07-13
 
 ### Added

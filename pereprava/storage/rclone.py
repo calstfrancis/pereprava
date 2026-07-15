@@ -82,3 +82,51 @@ def create_pcloud_remote(name: str, token: str) -> tuple[bool, str]:
     if result.returncode != 0:
         return False, result.stderr.strip() or result.stdout.strip() or "rclone config create failed."
     return True, "Remote created."
+
+
+def obscure_password(password: str) -> tuple[bool, str]:
+    """Run `rclone obscure` — rclone config's password fields must be given
+    already-obscured when created non-interactively via `config create`."""
+    try:
+        result = subprocess.run(
+            ["rclone", "obscure", password], capture_output=True, text=True, timeout=_TIMEOUT
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"Could not run rclone: {exc}"
+    if result.returncode != 0:
+        return False, result.stderr.strip() or "rclone obscure failed."
+    return True, result.stdout.strip()
+
+
+def create_crypt_remote(
+    name: str, wrapped_remote: str, obscured_password: str, obscured_password2: str = ""
+) -> tuple[bool, str]:
+    """Wrap an existing remote:path in an rclone crypt remote for client-side
+    encryption. Passwords must already be obscure_password()'d."""
+    args = ["rclone", "config", "create", name, "crypt", "remote", wrapped_remote, "password", obscured_password]
+    if obscured_password2:
+        args += ["password2", obscured_password2]
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"Could not run rclone: {exc}"
+    if result.returncode != 0:
+        return False, result.stderr.strip() or result.stdout.strip() or "rclone config create failed."
+    return True, "Remote created."
+
+
+def get_about(remote: str) -> dict | None:
+    """`rclone about remote: --json` — total/used/free bytes, or None if the
+    backend doesn't support it (some remotes don't) or the call fails."""
+    try:
+        result = subprocess.run(
+            ["rclone", "about", remote, "--json"], capture_output=True, text=True, timeout=_TIMEOUT
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        return json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return None

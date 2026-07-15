@@ -46,7 +46,9 @@ def import_jobs(src_path: Path) -> tuple[int, list[str]]:
         if job.slug in existing_slugs:
             job.slug = unique_slug(job.name, existing_slugs)
         existing_slugs.add(job.slug)
-        actions.save_and_apply(job)
+        ok, error = actions.save_and_apply(job)
+        if not ok:
+            errors.append(f"“{job.name}” was imported but couldn't be started: {error}")
         imported += 1
 
     return imported, errors

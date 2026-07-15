@@ -7,7 +7,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Adw, Gdk, Gtk
+from gi.repository import Adw, Gdk, GLib, Gtk
 
 from pereprava.storage.logs import tail_log
 
@@ -46,12 +46,25 @@ class LogViewDialog(Adw.Dialog):
         scrolled.set_child(self._text_view)
         toolbar_view.set_content(scrolled)
 
-        self.set_child(toolbar_view)
+        self._toast_overlay = Adw.ToastOverlay()
+        self._toast_overlay.set_child(toolbar_view)
+        self.set_child(self._toast_overlay)
         self._reload()
 
     def _reload(self) -> None:
         text = tail_log(self._log_path)
-        self._text_view.get_buffer().set_text(text)
+        buf = self._text_view.get_buffer()
+        buf.set_text(text)
+
+        def scroll_to_end() -> bool:
+            end_mark = buf.create_mark(None, buf.get_end_iter(), False)
+            self._text_view.scroll_mark_onscreen(end_mark)
+            return GLib.SOURCE_REMOVE
+
+        # Deferred: right after set_text() the view may not be laid out yet
+        # (e.g. the very first _reload() during __init__, before the dialog
+        # is even presented), so scroll_mark_onscreen would be a no-op.
+        GLib.idle_add(scroll_to_end)
 
     def _copy(self) -> None:
         buf = self._text_view.get_buffer()
@@ -59,3 +72,4 @@ class LogViewDialog(Adw.Dialog):
         text = buf.get_text(start, end, False)
         clipboard = Gdk.Display.get_default().get_clipboard()
         clipboard.set(text)
+        self._toast_overlay.add_toast(Adw.Toast(title="Copied to clipboard", timeout=2))

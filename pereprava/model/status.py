@@ -22,6 +22,7 @@ class JobStatus:
     next_run: datetime | None = None
     last_run: datetime | None = None
     last_result: str | None = None  # "success" | "failed" | None
+    last_run_duration_seconds: float | None = None
 
 
 class DiscrepancyKind(Enum):

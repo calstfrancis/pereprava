@@ -12,6 +12,7 @@ class JobType(Enum):
     RCLONE_COPY = "rclone_copy"
     RCLONE_SYNC = "rclone_sync"
     RCLONE_BISYNC = "rclone_bisync"
+    RCLONE_CHECK = "rclone_check"
     RSYNC = "rsync"
     CUSTOM = "custom"
     RCLONE_MOUNT = "rclone_mount"
@@ -22,6 +23,7 @@ JOB_TYPE_LABELS: dict[JobType, str] = {
     JobType.RCLONE_COPY: "rclone copy (never deletes)",
     JobType.RCLONE_SYNC: "rclone sync (can delete at destination)",
     JobType.RCLONE_BISYNC: "rclone bisync (can delete on either side)",
+    JobType.RCLONE_CHECK: "rclone check (verify only, never transfers)",
     JobType.RSYNC: "rsync",
     JobType.CUSTOM: "Custom command",
     JobType.RCLONE_MOUNT: "rclone mount (persistent mount point)",
@@ -69,6 +71,13 @@ class Job:
     schedule: Schedule
     log_path: str
     extra_args: list[str] = field(default_factory=list)
+    excludes: list[str] = field(default_factory=list)
+    includes: list[str] = field(default_factory=list)
+    bwlimit: str = ""
+    pre_hook: str = ""
+    post_hook: str = ""
+    condition_ac_power: bool = False
+    condition_ssid: str = ""
     custom_command: list[str] | None = None
     rsync_delete: bool = False
     enabled: bool = True
@@ -80,9 +89,10 @@ class Job:
 
         Derived from job_type, never a free-standing user-settable flag —
         rclone copy structurally cannot delete, sync/bisync/custom always can.
-        A mount doesn't copy/delete anything itself, so it's never destructive.
+        A mount or a check doesn't copy/delete anything itself, so neither is
+        ever destructive.
         """
-        if self.job_type in (JobType.RCLONE_COPY, JobType.RCLONE_MOUNT):
+        if self.job_type in (JobType.RCLONE_COPY, JobType.RCLONE_MOUNT, JobType.RCLONE_CHECK):
             return False
         if self.job_type == JobType.RSYNC:
             return self.rsync_delete
@@ -102,6 +112,13 @@ class Job:
             "source": self.source,
             "destination": self.destination,
             "extra_args": self.extra_args,
+            "excludes": self.excludes,
+            "includes": self.includes,
+            "bwlimit": self.bwlimit,
+            "pre_hook": self.pre_hook,
+            "post_hook": self.post_hook,
+            "condition_ac_power": self.condition_ac_power,
+            "condition_ssid": self.condition_ssid,
             "custom_command": self.custom_command,
             "rsync_delete": self.rsync_delete,
             "schedule": self.schedule.to_dict(),
@@ -118,6 +135,13 @@ class Job:
             source=data["source"],
             destination=data["destination"],
             extra_args=list(data.get("extra_args", [])),
+            excludes=list(data.get("excludes", [])),
+            includes=list(data.get("includes", [])),
+            bwlimit=data.get("bwlimit", ""),
+            pre_hook=data.get("pre_hook", ""),
+            post_hook=data.get("post_hook", ""),
+            condition_ac_power=data.get("condition_ac_power", False),
+            condition_ssid=data.get("condition_ssid", ""),
             custom_command=data.get("custom_command"),
             rsync_delete=data.get("rsync_delete", False),
             schedule=Schedule.from_dict(data.get("schedule", {})),

@@ -18,8 +18,9 @@ from pereprava.model.status import Discrepancy, DiscrepancyKind, RunState
 
 _TYPE_ICON = {
     JobType.RCLONE_COPY: "folder-remote-symbolic",
-    JobType.RCLONE_SYNC: "folder-remote-symbolic",
+    JobType.RCLONE_SYNC: "view-refresh-symbolic",
     JobType.RCLONE_BISYNC: "emblem-synchronizing-symbolic",
+    JobType.RCLONE_CHECK: "edit-find-symbolic",
     JobType.RSYNC: "folder-symbolic",
     JobType.CUSTOM: "utilities-terminal-symbolic",
     JobType.RCLONE_MOUNT: "drive-harddisk-symbolic",
@@ -49,6 +50,16 @@ def _relative(dt: datetime, *, future: bool) -> str:
     else:
         span = f"{int(seconds // 86400)}d"
     return f"in {span}" if future else f"{span} ago"
+
+
+def _elide_middle(text: str, max_len: int = 40) -> str:
+    """Elide the middle of a long path, keeping both ends visible — the default
+    single-direction ellipsis on a combined "source → destination" string can
+    otherwise hide an entire side depending on which one runs long."""
+    if len(text) <= max_len:
+        return text
+    keep = (max_len - 1) // 2
+    return f"{text[:keep]}…{text[-keep:]}"
 
 
 def status_text(entry: JobEntry) -> str:
@@ -89,8 +100,12 @@ def build_menu_button(
     on_toggle_pause: Callable[[str], None],
     on_edit: Callable[[str], None],
     on_delete: Callable[[str], None],
+    on_duplicate: Callable[[str], None],
+    on_restore: Callable[[str], None],
+    on_view_history: Callable[[str], None],
     is_paused: bool,
     is_mount: bool = False,
+    can_restore: bool = False,
 ) -> Gtk.MenuButton:
     popover = Gtk.Popover()
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -124,6 +139,12 @@ def build_menu_button(
         box.append(make_item("Resume" if is_paused else "Pause", lambda: on_toggle_pause(slug)))
     if is_mount:
         box.append(make_item("View Log", lambda: on_view_log(slug)))
+    else:
+        box.append(make_item("View History", lambda: on_view_history(slug)))
+    box.append(Gtk.Separator())
+    box.append(make_item("Duplicate…", lambda: on_duplicate(slug)))
+    if can_restore:
+        box.append(make_item("Restore…", lambda: on_restore(slug)))
     box.append(Gtk.Separator())
     box.append(make_item("Edit…", lambda: on_edit(slug)))
     box.append(make_item("Delete…", lambda: on_delete(slug)))
@@ -141,7 +162,8 @@ def build_job_row(entry: JobEntry, callbacks: dict) -> Adw.ActionRow:
     job = entry.job
     row = Adw.ActionRow()
     row.set_title(job.name)
-    row.set_subtitle(f"{job.source} → {job.destination}")
+    row.set_subtitle(f"{_elide_middle(job.source)} → {_elide_middle(job.destination)}")
+    row.set_tooltip_text(f"{job.source} → {job.destination}")
     row.add_prefix(Gtk.Image.new_from_icon_name(_TYPE_ICON[job.job_type]))
 
     suffix = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -166,13 +188,36 @@ def build_job_row(entry: JobEntry, callbacks: dict) -> Adw.ActionRow:
             on_toggle_pause=callbacks["on_toggle_pause"],
             on_edit=callbacks["on_edit"],
             on_delete=callbacks["on_delete"],
+            on_duplicate=callbacks["on_duplicate"],
+            on_restore=callbacks["on_restore"],
+            on_view_history=callbacks["on_view_history"],
             is_paused=not job.enabled,
             is_mount=job.job_type == JobType.RCLONE_MOUNT,
+            can_restore=job.job_type
+            in (JobType.RCLONE_COPY, JobType.RCLONE_SYNC, JobType.RCLONE_BISYNC, JobType.RSYNC),
         )
     )
 
     row.add_suffix(suffix)
     row.set_activatable(False)
+    return row
+
+
+def build_section_header(text: str) -> Gtk.ListBoxRow:
+    """A plain, non-interactive heading row — so discrepancies read as a
+    distinct group instead of just more rows tacked onto the job list."""
+    row = Gtk.ListBoxRow()
+    row.set_selectable(False)
+    row.set_activatable(False)
+    row.add_css_class("pereprava-section-header")
+    label = Gtk.Label(label=text)
+    label.add_css_class("heading")
+    label.add_css_class("dim-label")
+    label.set_xalign(0.0)
+    label.set_margin_start(12)
+    label.set_margin_top(12)
+    label.set_margin_bottom(4)
+    row.set_child(label)
     return row
 
 

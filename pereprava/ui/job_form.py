@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shlex
+import subprocess
 import threading
 from pathlib import Path
 from typing import Callable
@@ -25,7 +26,8 @@ from pereprava.ui.remote_browser import RemoteBrowserDialog
 
 _REMOTE_CHECK_DEBOUNCE_MS = 400
 
-_RCLONE_TYPES = {JobType.RCLONE_COPY, JobType.RCLONE_SYNC, JobType.RCLONE_BISYNC}
+_RCLONE_TYPES = {JobType.RCLONE_COPY, JobType.RCLONE_SYNC, JobType.RCLONE_BISYNC, JobType.RCLONE_CHECK}
+_NEVER_DESTRUCTIVE_TYPES = {JobType.RCLONE_COPY, JobType.RCLONE_MOUNT, JobType.RCLONE_CHECK}
 
 _JOB_TYPES = list(JOB_TYPE_LABELS.keys())
 _PRESETS = ["hourly", "every6h", "daily", "weekly", "custom"]
@@ -37,6 +39,8 @@ class JobFormDialog(Adw.Dialog):
         self._on_save = on_save
         self._editing = job
         self._remote_check_source_id: int | None = None
+        self._test_proc: subprocess.Popen | None = None
+        self._test_cancelled = False
         self.connect("closed", self._on_dialog_closed)
         self.set_content_width(560)
         self.set_content_height(680)
@@ -117,6 +121,30 @@ class JobFormDialog(Adw.Dialog):
         self._custom_command_row = Adw.EntryRow(title="Custom command (space-separated)")
         paths.add(self._custom_command_row)
 
+        self._excludes_row = Adw.EntryRow(
+            title="Exclude folders/files (space-separated glob patterns)"
+        )
+        self._excludes_row.set_tooltip_text(
+            'e.g. *.tmp "node_modules/**" .cache/** — quote patterns containing spaces'
+        )
+        paths.add(self._excludes_row)
+
+        self._includes_row = Adw.EntryRow(
+            title="Include only folders/files (space-separated glob patterns)"
+        )
+        self._includes_row.set_tooltip_text(
+            "Applied after Exclude — combined per rclone/rsync's normal filter-rule "
+            "order (first match wins). Leave blank to include everything not excluded."
+        )
+        paths.add(self._includes_row)
+
+        self._bwlimit_row = Adw.EntryRow(title="Bandwidth limit (optional)")
+        self._bwlimit_row.set_tooltip_text(
+            "e.g. 10M for a flat cap, or rclone's own \"08:00,512k 20:00,10M\" "
+            "time-of-day schedule (rclone jobs only — rsync only supports a flat rate)"
+        )
+        paths.add(self._bwlimit_row)
+
         self._extra_args_row = Adw.EntryRow(title="Extra arguments (space-separated)")
         paths.add(self._extra_args_row)
 
@@ -135,6 +163,11 @@ class JobFormDialog(Adw.Dialog):
         self._test_job_button.set_valign(Gtk.Align.CENTER)
         self._test_job_button.connect("clicked", self._on_test_job)
         test_job_row.add_suffix(self._test_job_button)
+        self._test_cancel_button = Gtk.Button(label="Cancel")
+        self._test_cancel_button.set_valign(Gtk.Align.CENTER)
+        self._test_cancel_button.connect("clicked", self._on_cancel_test_job)
+        self._test_cancel_button.set_visible(False)
+        test_job_row.add_suffix(self._test_cancel_button)
         paths.add(test_job_row)
 
         self._test_result_view = Gtk.TextView()
@@ -185,6 +218,31 @@ class JobFormDialog(Adw.Dialog):
         self._linger_banner.set_button_label("Enable")
         self._linger_banner.connect("button-clicked", self._on_enable_linger)
         self._startup_group.add(self._linger_banner)
+
+        # --- Hooks ---
+        hooks_group = Adw.PreferencesGroup(title="Hooks")
+        page.add(hooks_group)
+
+        self._pre_hook_row = Adw.EntryRow(title="Run before (shell command, optional)")
+        hooks_group.add(self._pre_hook_row)
+
+        self._post_hook_row = Adw.EntryRow(title="Run after, on success (shell command, optional)")
+        self._post_hook_row.set_tooltip_text(
+            "Runs only if the main command succeeds — stock systemd ExecStartPost "
+            "semantics. For a hook that must always run, build that into the command itself."
+        )
+        hooks_group.add(self._post_hook_row)
+
+        # --- Run Conditions ---
+        conditions_group = Adw.PreferencesGroup(title="Run Conditions")
+        page.add(conditions_group)
+
+        self._ac_power_row = Adw.SwitchRow(title="Only run on AC power")
+        conditions_group.add(self._ac_power_row)
+
+        self._ssid_row = Adw.EntryRow(title="Only run on this Wi-Fi network (SSID, optional)")
+        self._ssid_row.set_tooltip_text("Checked via nmcli — skipped cleanly (not a failure) off that network")
+        conditions_group.add(self._ssid_row)
 
         # --- Schedule ---
         schedule_group = Adw.PreferencesGroup(title="Schedule")
@@ -249,7 +307,14 @@ class JobFormDialog(Adw.Dialog):
         self._source_row.set_text(job.source)
         self._destination_row.set_text(job.destination)
         self._custom_command_row.set_text(shlex.join(job.custom_command or []))
+        self._excludes_row.set_text(shlex.join(job.excludes))
+        self._includes_row.set_text(shlex.join(job.includes))
+        self._bwlimit_row.set_text(job.bwlimit)
         self._extra_args_row.set_text(shlex.join(job.extra_args))
+        self._pre_hook_row.set_text(job.pre_hook)
+        self._post_hook_row.set_text(job.post_hook)
+        self._ac_power_row.set_active(job.condition_ac_power)
+        self._ssid_row.set_text(job.condition_ssid)
         self._rsync_delete_row.set_active(job.rsync_delete)
         self._log_path_row.set_text(job.log_path)
         preset = job.schedule.preset if job.schedule.preset in _PRESETS else "custom"
@@ -268,9 +333,12 @@ class JobFormDialog(Adw.Dialog):
         is_mount = job_type == JobType.RCLONE_MOUNT
         self._destination_row.set_visible(job_type != JobType.CUSTOM)
         self._custom_command_row.set_visible(job_type == JobType.CUSTOM)
+        self._excludes_row.set_visible(job_type != JobType.CUSTOM)
+        self._includes_row.set_visible(job_type != JobType.CUSTOM)
+        self._bwlimit_row.set_visible(job_type != JobType.CUSTOM)
         self._rsync_delete_row.set_visible(job_type == JobType.RSYNC)
         self._dest_browse_button.set_visible(job_type in _RCLONE_TYPES)
-        self._safety_group.set_visible(not is_mount)
+        self._safety_group.set_visible(job_type not in _NEVER_DESTRUCTIVE_TYPES)
         self._schedule_group.set_visible(not is_mount)
         self._startup_group.set_visible(is_mount)
 
@@ -299,7 +367,7 @@ class JobFormDialog(Adw.Dialog):
 
     def _is_destructive(self) -> bool:
         job_type = self._selected_type()
-        if job_type in (JobType.RCLONE_COPY, JobType.RCLONE_MOUNT):
+        if job_type in _NEVER_DESTRUCTIVE_TYPES:
             return False
         if job_type == JobType.RSYNC:
             return self._rsync_delete_row.get_active()
@@ -395,6 +463,8 @@ class JobFormDialog(Adw.Dialog):
         if self._remote_check_source_id is not None:
             GLib.source_remove(self._remote_check_source_id)
             self._remote_check_source_id = None
+        if self._test_proc is not None and self._test_proc.poll() is None:
+            self._test_proc.terminate()
 
     def _schedule_remote_check(self, *_args) -> None:
         if self._remote_check_source_id is not None:
@@ -436,18 +506,44 @@ class JobFormDialog(Adw.Dialog):
 
     def _on_test_job(self, _button) -> None:
         job = self._build_job()
+        reason = dry_run.unsupported_reason(job)
+        if reason:
+            self._test_result_scroll.set_visible(True)
+            self._test_result_view.get_buffer().set_text("✗ " + reason)
+            return
+
         self._test_job_button.set_sensitive(False)
+        self._test_cancel_button.set_visible(True)
         self._test_result_scroll.set_visible(True)
-        self._test_result_view.get_buffer().set_text("Testing…")
+        self._test_result_view.get_buffer().set_text(
+            "Testing… large or deeply-nested remotes can take a while; cancel any time."
+        )
+        self._test_cancelled = False
 
         def worker() -> None:
-            ok, message = dry_run.test_job(job)
+            proc = dry_run.start_test(job)
+            self._test_proc = proc
+            stdout, stderr = proc.communicate()
+            if self._test_cancelled:
+                return  # _on_cancel_test_job already updated the UI
+            ok, message = dry_run.interpret_result(job, proc.returncode, stdout, stderr)
             GLib.idle_add(self._on_test_job_done, ok, message)
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _on_test_job_done(self, ok: bool, message: str) -> bool:
+    def _on_cancel_test_job(self, _button) -> None:
+        self._test_cancelled = True
+        if self._test_proc is not None and self._test_proc.poll() is None:
+            self._test_proc.terminate()
+        self._test_proc = None
         self._test_job_button.set_sensitive(True)
+        self._test_cancel_button.set_visible(False)
+        self._test_result_view.get_buffer().set_text("Cancelled.")
+
+    def _on_test_job_done(self, ok: bool, message: str) -> bool:
+        self._test_proc = None
+        self._test_job_button.set_sensitive(True)
+        self._test_cancel_button.set_visible(False)
         prefix = "✓ " if ok else "✗ "
         self._test_result_view.get_buffer().set_text(prefix + message)
         return GLib.SOURCE_REMOVE
@@ -475,6 +571,13 @@ class JobFormDialog(Adw.Dialog):
             source=self._source_row.get_text().strip(),
             destination=self._destination_row.get_text().strip(),
             extra_args=shlex.split(self._extra_args_row.get_text()),
+            excludes=shlex.split(self._excludes_row.get_text()) if job_type != JobType.CUSTOM else [],
+            includes=shlex.split(self._includes_row.get_text()) if job_type != JobType.CUSTOM else [],
+            bwlimit=self._bwlimit_row.get_text().strip() if job_type != JobType.CUSTOM else "",
+            pre_hook=self._pre_hook_row.get_text().strip(),
+            post_hook=self._post_hook_row.get_text().strip(),
+            condition_ac_power=self._ac_power_row.get_active(),
+            condition_ssid=self._ssid_row.get_text().strip(),
             custom_command=shlex.split(self._custom_command_row.get_text()) or None
             if job_type == JobType.CUSTOM
             else None,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 
 from pereprava.logic.command import build_argv
@@ -15,6 +16,38 @@ def unit_basename(slug: str) -> str:
     return f"{UNIT_PREFIX}{slug}"
 
 
+def _mkdir_cmd(path: str) -> str:
+    return shlex.join(["/usr/bin/mkdir", "-p", path or "."])
+
+
+def _shell_cmd(hook: str) -> str | None:
+    """Wrap a user-provided hook string in /bin/sh -c so shell features (&&, |,
+    env vars) work, unlike the main ExecStart which runs argv directly with no
+    shell. None if the hook is blank, so callers can skip the directive."""
+    hook = hook.strip()
+    if not hook:
+        return None
+    return shlex.join(["/bin/sh", "-c", hook])
+
+
+def _condition_lines(job: Job) -> str:
+    """[Unit]-section Condition*= lines gating whether the unit runs at all."""
+    lines = ""
+    if job.condition_ac_power:
+        lines += "ConditionACPower=true\n"
+    return lines
+
+
+def _exec_condition_line(job: Job) -> str:
+    """[Service]-section ExecCondition= — unlike ConditionPathExists-style
+    checks, a nonzero exit here cleanly skips the run without marking the unit
+    failed, which is exactly what "only run on this Wi-Fi" wants."""
+    if not job.condition_ssid.strip():
+        return ""
+    check = f"nmcli -t -f active,ssid dev wifi | grep -qxF {shlex.quote('yes:' + job.condition_ssid.strip())}"
+    return f"ExecCondition={shlex.join(['/bin/sh', '-c', check])}\n"
+
+
 def render_service_unit(job: Job) -> str:
     argv = build_argv(job)
     exec_start = shlex.join(argv)
@@ -23,24 +56,39 @@ def render_service_unit(job: Job) -> str:
         + f"# Edit via the Pereprava app, or delete ~/.config/pereprava/jobs/{job.slug}.json to remove.\n"
         + "\n"
     )
+    condition_lines = _condition_lines(job)
+    exec_condition_line = _exec_condition_line(job)
+    pre_hook = _shell_cmd(job.pre_hook)
+    pre_hook_line = f"ExecStartPre={pre_hook}\n" if pre_hook else ""
+    post_hook = _shell_cmd(job.post_hook)
+    # Stock systemd semantics: ExecStartPost only runs if ExecStart succeeded.
+    # A hook meant to run unconditionally needs its own error handling.
+    post_hook_line = f"ExecStartPost={post_hook}\n" if post_hook else ""
+
     if job.job_type == JobType.RCLONE_MOUNT:
         # Persistent, not a periodic oneshot: no timer, started/stopped directly
         # via `systemctl --user enable|disable --now` on this unit. Type=notify
         # matches rclone's own recommended systemd unit — it calls sd_notify
         # once mounted. No ExecStop: rclone mount unmounts cleanly on SIGTERM,
         # which avoids hardcoding a fusermount/fusermount3 path that varies by distro.
-        mkdir_cmd = shlex.join(["/usr/bin/mkdir", "-p", job.destination])
+        mkdir_cmd = _mkdir_cmd(job.destination)
+        log_mkdir_cmd = _mkdir_cmd(os.path.dirname(job.log_path))
         return (
             header
             + "[Unit]\n"
             + f"Description=Pereprava mount: {job.name}\n"
             + "After=network-online.target\n"
             + "Wants=network-online.target\n"
+            + condition_lines
             + "\n"
             + "[Service]\n"
             + "Type=notify\n"
+            + exec_condition_line
             + f"ExecStartPre={mkdir_cmd}\n"
+            + f"ExecStartPre={log_mkdir_cmd}\n"
+            + pre_hook_line
             + f"ExecStart={exec_start}\n"
+            + post_hook_line
             + f"StandardOutput=append:{job.log_path}\n"
             + f"StandardError=append:{job.log_path}\n"
             + "Restart=on-failure\n"
@@ -49,14 +97,20 @@ def render_service_unit(job: Job) -> str:
             + "[Install]\n"
             + "WantedBy=default.target\n"
         )
+    log_mkdir_cmd = _mkdir_cmd(os.path.dirname(job.log_path))
     return (
         header
         + "[Unit]\n"
         + f"Description=Pereprava backup job: {job.name}\n"
+        + condition_lines
         + "\n"
         + "[Service]\n"
         + "Type=oneshot\n"
+        + exec_condition_line
+        + f"ExecStartPre={log_mkdir_cmd}\n"
+        + pre_hook_line
         + f"ExecStart={exec_start}\n"
+        + post_hook_line
         + f"StandardOutput=append:{job.log_path}\n"
         + f"StandardError=append:{job.log_path}\n"
     )

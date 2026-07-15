@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -13,12 +14,15 @@ from gi.repository import Adw, Gio, GLib, Gtk
 
 from pereprava import __version__ as _APP_VERSION
 from pereprava.logic import actions, discovery, import_export
+from pereprava.logic.slug import unique_slug
 from pereprava.model.status import RunState
 from pereprava.ui.changelog_view import show_changelog
+from pereprava.ui.history_view import HistoryViewDialog
 from pereprava.ui.job_form import JobFormDialog
-from pereprava.ui.job_row import build_discrepancy_row, build_job_row
+from pereprava.ui.job_row import build_discrepancy_row, build_job_row, build_section_header
 from pereprava.ui.log_view import LogViewDialog
-from pereprava.storage.jobs_store import load_job
+from pereprava.storage import app_state, history, logs
+from pereprava.storage.jobs_store import list_job_slugs, load_job
 
 REFRESH_INTERVAL_SECONDS = 8
 
@@ -51,7 +55,7 @@ class AppWindow(Adw.ApplicationWindow):
         header.set_title_widget(Adw.WindowTitle(title="Pereprava", subtitle=""))
 
         add_button = Gtk.Button(icon_name="list-add-symbolic")
-        add_button.set_tooltip_text("Add Job")
+        add_button.set_tooltip_text("Add Job (Ctrl+N)")
         add_button.connect("clicked", self._on_add_job)
         header.pack_start(add_button)
 
@@ -66,11 +70,20 @@ class AppWindow(Adw.ApplicationWindow):
         header.pack_start(import_button)
 
         refresh_button = Gtk.Button(icon_name="view-refresh-symbolic")
-        refresh_button.set_tooltip_text("Refresh")
+        refresh_button.set_tooltip_text("Refresh (Ctrl+R)")
         refresh_button.connect("clicked", lambda _b: self.refresh())
         header.pack_end(refresh_button)
 
         toolbar_view.add_top_bar(header)
+
+        add_job_action = Gio.SimpleAction.new("add-job", None)
+        add_job_action.connect("activate", lambda *_a: self._on_add_job(None))
+        self.add_action(add_job_action)
+        refresh_action = Gio.SimpleAction.new("refresh", None)
+        refresh_action.connect("activate", lambda *_a: self.refresh())
+        self.add_action(refresh_action)
+        application.set_accels_for_action("win.add-job", ["<Control>n"])
+        application.set_accels_for_action("win.refresh", ["<Control>r"])
 
         self._stack = Gtk.Stack()
         toolbar_view.set_content(self._stack)
@@ -130,6 +143,15 @@ class AppWindow(Adw.ApplicationWindow):
 
         self.refresh()
         GLib.timeout_add_seconds(REFRESH_INTERVAL_SECONDS, self._on_refresh_tick)
+        GLib.idle_add(self._maybe_show_whats_new)
+
+    def _maybe_show_whats_new(self) -> bool:
+        last_seen = app_state.get_last_seen_version()
+        if last_seen != _APP_VERSION:
+            if last_seen is not None:  # skip the very first run — nothing to be "new" against
+                show_changelog(self, _APP_VERSION)
+            app_state.set_last_seen_version(_APP_VERSION)
+        return GLib.SOURCE_REMOVE
 
     def _on_is_active_changed(self, *_args) -> None:
         self._is_active = self.is_active()
@@ -146,6 +168,10 @@ class AppWindow(Adw.ApplicationWindow):
     def refresh(self) -> None:
         entries, discrepancies = discovery.scan()
         self._notify_on_failures(entries)
+        for entry in entries:
+            logs.rotate_if_needed(entry.job.log_path)
+            if not entry.job.is_mount:
+                history.record_if_new(entry.job.slug, entry.status)
 
         while True:
             row = self._list_box.get_row_at_index(0)
@@ -164,10 +190,15 @@ class AppWindow(Adw.ApplicationWindow):
             "on_toggle_pause": self._on_toggle_pause,
             "on_edit": self._on_edit,
             "on_delete": self._on_delete,
+            "on_duplicate": self._on_duplicate,
+            "on_restore": self._on_restore,
+            "on_view_history": self._on_view_history,
         }
         for entry in entries:
             self._list_box.append(build_job_row(entry, callbacks))
 
+        if discrepancies:
+            self._list_box.append(build_section_header(f"Needs attention ({len(discrepancies)})"))
         disc_callbacks = {
             "on_remove_unmanaged": self._on_remove_unmanaged,
             "on_repair": self._on_repair,
@@ -177,6 +208,11 @@ class AppWindow(Adw.ApplicationWindow):
 
     def _toast(self, message: str) -> None:
         self._toast_overlay.add_toast(Adw.Toast(title=message, timeout=3))
+
+    def _show_error_dialog(self, heading: str, body: str) -> None:
+        alert = Adw.AlertDialog(heading=heading, body=body)
+        alert.add_response("ok", "OK")
+        alert.present(self)
 
     def _notify_on_failures(self, entries) -> None:
         """Send a desktop notification the moment a job transitions into FAILED,
@@ -248,18 +284,65 @@ class AppWindow(Adw.ApplicationWindow):
 
     # --- row actions ---
     def _on_run_now(self, slug: str) -> None:
-        actions.run_now(slug)
-        self._toast("Job started")
+        job = load_job(slug)
+        ok, error = actions.run_now(slug)
+        if ok:
+            self._toast("Job started")
+        else:
+            self._show_error_dialog(f"Couldn't start “{job.name}”", error)
         self.refresh()
 
     def _on_view_log(self, slug: str) -> None:
         job = load_job(slug)
         LogViewDialog(job.name, job.log_path).present(self)
 
+    def _on_view_history(self, slug: str) -> None:
+        job = load_job(slug)
+        HistoryViewDialog(job.name, slug).present(self)
+
+    @staticmethod
+    def _default_log_path(slug: str) -> str:
+        return str(Path.home() / ".local" / "state" / "pereprava" / f"{slug}.log")
+
+    def _on_duplicate(self, slug: str) -> None:
+        job = load_job(slug)
+        new_slug = unique_slug(f"{job.name} (copy)", set(list_job_slugs()))
+        duplicate = replace(
+            job,
+            slug=new_slug,
+            name=f"{job.name} (copy)",
+            enabled=False,
+            log_path=self._default_log_path(new_slug),
+        )
+        dialog = JobFormDialog(self._on_job_saved, job=duplicate)
+        dialog.set_title("Duplicate Job")
+        dialog.present(self)
+
+    def _on_restore(self, slug: str) -> None:
+        job = load_job(slug)
+        new_slug = unique_slug(f"Restore from {job.name}", set(list_job_slugs()))
+        restore_job = replace(
+            job,
+            slug=new_slug,
+            name=f"Restore from {job.name}",
+            source=job.destination,
+            destination=job.source,
+            enabled=False,
+            log_path=self._default_log_path(new_slug),
+        )
+        dialog = JobFormDialog(self._on_job_saved, job=restore_job)
+        dialog.set_title("Restore — review before saving")
+        dialog.present(self)
+
     def _on_toggle_pause(self, slug: str) -> None:
         job = load_job(slug)
-        actions.set_enabled(job, not job.enabled)
-        self._toast("Job paused" if not job.enabled else "Job resumed")
+        target_enabled = not job.enabled
+        ok, error = actions.set_enabled(job, target_enabled)
+        if ok:
+            self._toast("Job paused" if not target_enabled else "Job resumed")
+        else:
+            verb = "resume" if target_enabled else "pause"
+            self._show_error_dialog(f"Couldn't {verb} “{job.name}”", error)
         self.refresh()
 
     def _on_edit(self, slug: str) -> None:
@@ -281,28 +364,54 @@ class AppWindow(Adw.ApplicationWindow):
 
         def on_response(_dlg, response):
             if response == "delete":
-                actions.delete_job_and_units(job)
-                self._toast("Job deleted")
+                ok, error = actions.delete_job_and_units(job)
+                if ok:
+                    self._toast("Job deleted")
+                else:
+                    self._toast("Job deleted, but stopping its unit failed")
+                    self._show_error_dialog(f"Couldn't stop “{job.name}”'s unit", error)
                 self.refresh()
 
         dialog.connect("response", on_response)
         dialog.present(self)
 
     def _on_remove_unmanaged(self, slug: str, unit_name: str) -> None:
-        actions.remove_unmanaged_unit(slug, unit_name)
-        self._toast("Unit removed")
-        self.refresh()
+        dialog = Adw.AlertDialog(
+            heading=f"Remove “{unit_name}”?",
+            body="This unit isn't managed by Pereprava. It will be disabled, "
+            "stopped, and its unit file deleted.",
+        )
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("remove", "Remove")
+        dialog.set_response_appearance("remove", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+
+        def on_response(_dlg, response):
+            if response == "remove":
+                actions.remove_unmanaged_unit(slug, unit_name)
+                self._toast("Unit removed")
+                self.refresh()
+
+        dialog.connect("response", on_response)
+        dialog.present(self)
 
     def _on_repair(self, slug: str) -> None:
         job = load_job(slug)
-        actions.repair_units(job)
-        self._toast("Units regenerated")
+        ok, error = actions.repair_units(job)
+        if ok:
+            self._toast("Units regenerated")
+        else:
+            self._show_error_dialog(f"Couldn't repair “{job.name}”", error)
         self.refresh()
 
     def _on_add_job(self, _button) -> None:
         JobFormDialog(self._on_job_saved).present(self)
 
     def _on_job_saved(self, job, _acknowledged: bool) -> None:
-        actions.save_and_apply(job)
-        self._toast("Job saved")
+        ok, error = actions.save_and_apply(job)
+        if ok:
+            self._toast("Job saved")
+        else:
+            self._show_error_dialog(f"“{job.name}” was saved, but couldn't be started", error)
         self.refresh()

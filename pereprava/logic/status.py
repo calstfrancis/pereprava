@@ -80,7 +80,7 @@ def get_job_status(slug: str, job_type: JobType) -> JobStatus:
 
     service_props = systemctl.show_properties(
         service_unit,
-        ["ActiveState", "SubState", "Result", "ExecMainStartTimestamp"],
+        ["ActiveState", "SubState", "Result", "ExecMainStartTimestamp", "ExecMainExitTimestamp"],
     )
     timer_props = systemctl.show_properties(timer_unit, ["UnitFileState"])
 
@@ -90,6 +90,8 @@ def get_job_status(slug: str, job_type: JobType) -> JobStatus:
     sub_state = service_props.get("SubState", "")
     result = service_props.get("Result", "")
     started = _parse_systemd_timestamp(service_props.get("ExecMainStartTimestamp", ""))
+    exited = _parse_systemd_timestamp(service_props.get("ExecMainExitTimestamp", ""))
+    duration_seconds = (exited - started).total_seconds() if started and exited and exited >= started else None
 
     timers = systemctl.list_timers_json(timer_unit)
     next_run: datetime | None = None
@@ -121,4 +123,5 @@ def get_job_status(slug: str, job_type: JobType) -> JobStatus:
         next_run=next_run if timer_enabled else None,
         last_run=last_run,
         last_result=result or None,
+        last_run_duration_seconds=duration_seconds,
     )
