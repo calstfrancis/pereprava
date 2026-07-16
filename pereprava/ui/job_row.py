@@ -37,7 +37,10 @@ _STATE_CSS = {
     RunState.RUNNING: "pereprava-status-running",
     RunState.PAUSED: "pereprava-status-paused",
     RunState.IDLE: "pereprava-status-paused",
+    RunState.SKIPPED: "pereprava-status-skipped",
 }
+
+_SKIPPED_TEXT = "Skipped — a Run Condition isn't met (AC power / Wi-Fi)"
 
 
 def _relative(dt: datetime, *, future: bool) -> str:
@@ -69,6 +72,11 @@ def _elide_middle(text: str, max_len: int = 40) -> str:
 
 def status_text(entry: JobEntry) -> str:
     status = entry.status
+    # Systemd treats an unmet Condition/ExecCondition as a routine skip, not a
+    # failure: no exec attempt, no error, nothing else changes — surfaced the
+    # same way regardless of job type, since the message doesn't depend on it.
+    if status.state == RunState.SKIPPED:
+        return _SKIPPED_TEXT
     if entry.job.job_type == JobType.RCLONE_MOUNT:
         if status.state == RunState.RUNNING:
             return "Mounting…"

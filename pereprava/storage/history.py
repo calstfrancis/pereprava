@@ -12,7 +12,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from pereprava.model.status import JobStatus
+from pereprava.model.status import JobStatus, RunState
 
 HISTORY_DIR = Path.home() / ".local" / "share" / "pereprava" / "history"
 MAX_ENTRIES = 50
@@ -39,6 +39,8 @@ def record_if_new(slug: str, status: JobStatus) -> None:
     """Append a history entry if `status.last_run` is a run we haven't recorded
     yet for this job. Safe to call on every poll — a no-op once a run's
     already been recorded."""
+    if status.state == RunState.SKIPPED:
+        return  # a Run Condition skip isn't a run — nothing actually executed
     if status.last_run is None or status.last_result is None:
         return  # never run yet, or still running with no result to record
     started_at = status.last_run.isoformat()

@@ -13,6 +13,7 @@ class RunState(Enum):
     OK = "ok"
     FAILED = "failed"
     PAUSED = "paused"
+    SKIPPED = "skipped"  # last attempt was silently skipped by a Run Condition
 
 
 @dataclass

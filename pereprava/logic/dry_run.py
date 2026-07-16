@@ -11,10 +11,19 @@ long — same shape as the pCloud authorize flow in ui/pcloud_setup.py."""
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 
 from pereprava.logic.command import RCLONE_BIN, build_argv
 from pereprava.model.job import Job, JobType
+
+# rclone's own stats footer (always printed at -v, which build_argv always
+# sets — see logic/command.py) includes a "Transferred:  N / M" file-count
+# line; "0 / 0" is rclone's own stable, long-standing way of saying nothing
+# needed transferring. Matched narrowly (only replaces the raw output with
+# the friendly fallback when this specific count is confirmed zero) so a
+# genuine diff — any other text on this line — always still shows through.
+_ZERO_TRANSFER_RE = re.compile(r"Transferred:\s+0\s*[A-Za-z]*\s*/\s*0\b")
 
 _DRY_RUN_SUPPORTED = {
     JobType.RCLONE_COPY,
@@ -57,5 +66,12 @@ def interpret_result(job: Job, returncode: int, stdout: str, stderr: str) -> tup
             entries = []
         return True, f"Remote is reachable — {len(entries)} item(s) at top level."
 
-    output = stdout.strip()
-    return True, output if output else "Dry run completed — no changes would be made."
+    # rclone (with -v) and rsync both write their actual per-file/dry-run
+    # notices to stderr, not stdout — stdout is typically empty for these
+    # commands. Checking stdout alone meant a real, non-trivial diff still
+    # reported the generic "no changes" fallback because nothing was ever
+    # looking at the stream the output was actually on.
+    output = "\n".join(part.strip() for part in (stdout, stderr) if part.strip())
+    if not output or _ZERO_TRANSFER_RE.search(output):
+        return True, "Dry run completed — no changes would be made."
+    return True, output

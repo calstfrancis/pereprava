@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2] "Common Ground" — 2026-07-16
+
+### Fixed
+- The Add/Edit form's "Test" dry run now reads rclone/rsync's actual output correctly — both write their per-file notices, dry-run previews, and transfer summary to stderr, not stdout, but `interpret_result` only ever checked stdout, so a real job with a large, genuine diff still reported the generic "no changes would be made" fallback. Also, since rclone's `-v` (needed so real runs don't log silently — see below) means its stats footer is now always present even for a genuinely no-op dry run, the "no changes" message is restored via a narrow, stable match on rclone's own zero-file-count line, rather than becoming unreachable behind a raw stats dump. This was purely a Test-button display bug — the actual scheduled/Run Now execution's log capture uses a separate, unaffected code path (`StandardOutput=`/`StandardError=append` on the systemd unit itself)
+- A job whose most recent start attempt was silently skipped by an unmet Run Condition (AC power / Wi-Fi SSID) now shows "Skipped — a Run Condition isn't met" instead of looking like nothing happened at all, via a proper `RunState.SKIPPED` value rather than a bolt-on flag — so the tray icon, desktop failure notifications, and run history all correctly treat it as a routine skip too, instead of a real failure. (An earlier version of this fix added the skip as a separate boolean alongside the existing OK/FAILED/etc. state, which only fixed the status *text*: the underlying state still classified an unmet Wi-Fi condition as FAILED, so the tray flipped to "attention needed," a false "Job failed" desktop notification fired, and a misleading "Failed (exec-condition)" entry got recorded to history — every time the condition wasn't met.)
+- `rclone`/`rsync` are now resolved via `PATH` (then `~/.local/bin`, `/usr/local/bin`, and common Homebrew-on-Linux locations) at startup instead of being hardcoded to `/usr/bin/rclone`/`/usr/bin/rsync` — on a machine where either is installed elsewhere, every single job referenced a nonexistent binary. For periodic (timer-based) jobs specifically, that failure was structurally invisible: saving only validates that the *timer* enables, never whether the triggered service's command can actually run, so nothing showed up until the timer fired on its own — no error, no log, no history
+
 ## [0.6.1] "Open Passage" — 2026-07-15
 
 ### Fixed

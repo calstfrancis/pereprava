@@ -37,12 +37,26 @@ def _parse_epoch_field(entry: dict, *keys: str) -> datetime | None:
     return None
 
 
+def _condition_unmet(props: dict) -> bool:
+    """True if the unit's last start attempt was silently skipped by a Run
+    Condition (ConditionACPower= or the Wi-Fi SSID ExecCondition=) — systemd
+    treats this as a routine skip, not a failure: no error, no exec attempt,
+    ActiveState/ExecMain* stay exactly as they were before, and Result is
+    either untouched (plain Condition=) or set to the specific value
+    "exec-condition" (ExecCondition=) — never "success" or a real failure
+    code. Folded directly into `state` as RunState.SKIPPED rather than a
+    separate flag, so every consumer that already switches on `state` (the
+    tray icon, desktop notifications, run history) handles this correctly by
+    construction instead of needing to separately learn a new field exists."""
+    return props.get("ConditionResult") == "no" or props.get("Result") == "exec-condition"
+
+
 def _get_mount_status(service_unit: str) -> JobStatus:
     """Mount jobs have no timer — the service itself is the enabled/running unit,
     and its steady state (mounted and idle) is what other job types call OK."""
     service_props = systemctl.show_properties(
         service_unit,
-        ["ActiveState", "SubState", "Result", "ActiveEnterTimestamp", "UnitFileState"],
+        ["ActiveState", "SubState", "Result", "ActiveEnterTimestamp", "UnitFileState", "ConditionResult"],
     )
     enabled = service_props.get("UnitFileState") == "enabled"
     active_state = service_props.get("ActiveState", "")
@@ -53,6 +67,8 @@ def _get_mount_status(service_unit: str) -> JobStatus:
         state = RunState.RUNNING
     elif not enabled:
         state = RunState.PAUSED
+    elif _condition_unmet(service_props):
+        state = RunState.SKIPPED
     elif active_state == "failed" or (result and result != "success"):
         state = RunState.FAILED
     elif active_state == "active":
@@ -80,7 +96,7 @@ def get_job_status(slug: str, job_type: JobType) -> JobStatus:
 
     service_props = systemctl.show_properties(
         service_unit,
-        ["ActiveState", "SubState", "Result", "ExecMainStartTimestamp", "ExecMainExitTimestamp"],
+        ["ActiveState", "SubState", "Result", "ExecMainStartTimestamp", "ExecMainExitTimestamp", "ConditionResult"],
     )
     timer_props = systemctl.show_properties(timer_unit, ["UnitFileState"])
 
@@ -108,6 +124,8 @@ def get_job_status(slug: str, job_type: JobType) -> JobStatus:
         state = RunState.RUNNING
     elif not timer_enabled:
         state = RunState.PAUSED
+    elif _condition_unmet(service_props):
+        state = RunState.SKIPPED
     elif last_run is None:
         state = RunState.IDLE
     elif result == "success":

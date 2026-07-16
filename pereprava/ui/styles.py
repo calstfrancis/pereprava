@@ -22,6 +22,9 @@ CSS = """
 .pereprava-status-paused {
     color: alpha(currentColor, 0.6);
 }
+.pereprava-status-skipped {
+    color: @warning_color;
+}
 .pereprava-warning-icon {
     color: @warning_color;
 }

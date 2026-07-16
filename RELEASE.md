@@ -1,27 +1,41 @@
-# Pereprava v0.6.1 "Open Passage"
+# Pereprava v0.6.2 "Common Ground"
 
-**Released:** 2026-07-15
+**Released:** 2026-07-16
 
 ## What's new
 
-A small follow-up release, fixing a genuine dead end in the "needs repair" flow:
+A reliability-focused release — three fixes for jobs that could fail invisibly,
+regardless of which prior version you were running:
 
-- **"Repair" actually repairs now.** It used to respect whatever `enabled` state was
-  already stored on the job — so a job that had been paused (e.g. to stop a mount's
-  retry loop while troubleshooting) and then had its unit garbage-collected by systemd
-  would show up as "needs repair," but clicking Repair just called `disable_now` on a
-  unit that wasn't even loaded: a no-op that reported success while changing nothing.
-  Repair now forces the job back to enabled, so it actually tries to start again.
-- **The "needs repair" row has Edit and Delete now, not just Repair** — previously, a
-  job stuck in that state with no way for Repair alone to fix it (a bad path, a wrong
-  remote name) had no way to be changed or removed at all.
+- **`rclone`/`rsync` are no longer hardcoded to `/usr/bin/`.** They're now resolved via
+  `PATH`, then `~/.local/bin`, `/usr/local/bin`, and common Homebrew-on-Linux locations.
+  If either was installed anywhere else, every job referenced a nonexistent binary —
+  and for periodic (timer-based) jobs specifically, that failure was structurally
+  invisible: saving a job only ever validated that its *timer* enabled, never whether
+  the command it triggers can actually run, so nothing showed up until the timer fired
+  on its own — no error, no log, no history.
+- **A job skipped by an unmet Run Condition (AC power / Wi-Fi) is now correctly
+  classified** as its own `RunState.SKIPPED`, not misreported as a real failure. A
+  same-night earlier fix only patched the status *text*; the tray icon, desktop "Job
+  failed" notifications, and run history all still treated a routine condition skip as
+  a genuine failure until this release.
+- **The Add/Edit form's dry-run "Test" correctly restores the "no changes" message**
+  for a genuinely no-op preview, instead of always showing a raw rclone stats dump —
+  a side effect of an earlier fix that made real diffs show up correctly at all.
+
+**If you're updating an existing install:** none of this applies to jobs already
+running until you re-save them — Pereprava never rewrites a job's systemd unit on its
+own. After updating, open each job in Edit and click Save (or use Repair on any row
+showing "needs attention") so it picks up the corrected binary path and everything
+else fixed since whatever version you're coming from.
 
 See [CHANGELOG.md](CHANGELOG.md) for everything since the last release, including
-v0.6.0 "Still Waters" (background persistence, optional tray icon, a mount-point fix),
-v0.5.0 "Steady Current" (live transfer progress), and v0.4.0 "Third Crossing" (`rclone
-check`, bandwidth limits, include/exclude filters, pre/post-run hooks, conditional
-scheduling, job duplication, one-click restore, per-job run history, guided
-encrypted-remote setup, and remote quota display).
+v0.6.1 "Open Passage" (fixing a "needs repair" dead end), v0.6.0 "Still Waters"
+(background persistence, optional tray icon, a mount-point fix), v0.5.0 "Steady
+Current" (live transfer progress), and v0.4.0 "Third Crossing" (`rclone check`,
+bandwidth limits, include/exclude filters, pre/post-run hooks, conditional scheduling,
+job duplication, one-click restore, per-job run history, guided encrypted-remote
+setup, and remote quota display).
 
 ## Download
 
@@ -35,10 +49,10 @@ path access, both of which fight the flatpak sandbox model.
 ## Installation
 
 ```bash
-curl -L -o pereprava-0.6.1.tar.gz \
-  https://github.com/calstfrancis/pereprava/archive/refs/tags/v0.6.1.tar.gz
-tar xzf pereprava-0.6.1.tar.gz
-cd pereprava-0.6.1
+curl -L -o pereprava-0.6.2.tar.gz \
+  https://github.com/calstfrancis/pereprava/archive/refs/tags/v0.6.2.tar.gz
+tar xzf pereprava-0.6.2.tar.gz
+cd pereprava-0.6.2
 ./install.sh
 pereprava
 ```

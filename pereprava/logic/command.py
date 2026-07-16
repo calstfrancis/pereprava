@@ -2,11 +2,46 @@
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 from pereprava.logic.rc import RC_CAPABLE_TYPES
 from pereprava.model.job import Job, JobType
 
-RCLONE_BIN = "/usr/bin/rclone"
-RSYNC_BIN = "/usr/bin/rsync"
+
+def _resolve_bin(name: str, default: str) -> str:
+    """Resolve a binary's absolute path at import time rather than hardcoding
+    it, since a hardcoded /usr/bin/X silently breaks on any machine where
+    it's installed elsewhere — every job referencing it would fail, and for
+    periodic (timer-based) jobs specifically, that failure is structurally
+    invisible at save time (logic/actions.py's save_and_apply only validates
+    that the *timer* enables, never whether the service's ExecStart binary
+    actually exists) and only shows up later once the timer fires.
+
+    Checks PATH first, then a few common non-PATH install locations —
+    ~/.local/bin especially, since a GUI-launched app (desktop icon/app
+    launcher) often sees a more restricted PATH than an interactive
+    terminal: a custom install directory added only via a shell rc file
+    (.bashrc) is invisible to a desktop session that never sources it, even
+    though `which` from a terminal would find it fine. Falls back to the
+    historical hardcoded path if nothing is found, matching prior behavior.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    for candidate in (
+        Path.home() / ".local" / "bin" / name,
+        Path("/usr/local/bin") / name,
+        Path("/opt/homebrew/bin") / name,
+        Path("/home/linuxbrew/.linuxbrew/bin") / name,
+    ):
+        if candidate.is_file():
+            return str(candidate)
+    return default
+
+
+RCLONE_BIN = _resolve_bin("rclone", "/usr/bin/rclone")
+RSYNC_BIN = _resolve_bin("rsync", "/usr/bin/rsync")
 
 
 def _exclude_flags(job: Job) -> list[str]:

@@ -44,7 +44,9 @@ acknowledgment before it can be saved.
 - Python 3.10+
 - GTK4 and libadwaita with their GObject Introspection bindings (`python3-gobject` /
   `python-gobject` / distro equivalent) installed system-wide
-- `rclone` and/or `rsync`, whichever your jobs use
+- `rclone` and/or `rsync`, whichever your jobs use — found via `PATH`, then
+  `~/.local/bin`, `/usr/local/bin`, and common Homebrew-on-Linux locations if not on
+  `PATH` (resolved once, at launch)
 - FUSE (`/dev/fuse` + the `fuse`/`fuse3` package), if you use any `rclone mount` jobs
 - `systemd --user` (any modern Linux desktop)
 - For a mount to start at boot without logging in, enable lingering for your user
