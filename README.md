@@ -62,6 +62,14 @@ acknowledgment before it can be saved.
 
 ## Installing
 
+One-liner (downloads the latest release and installs it):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/calstfrancis/pereprava/main/install-remote.sh | bash
+```
+
+Or clone/download a release yourself and run the installer directly:
+
 ```sh
 ./install.sh
 pereprava
@@ -98,6 +106,8 @@ want that.
 
 No flatpak — Pereprava needs to control host `systemd --user` units and read arbitrary
 host paths, both of which fight the flatpak sandbox model. No RPM either; for the small
-number of people using this, the install script is the whole distribution story. Grab a
-release from the [Releases page](https://github.com/calstfrancis/pereprava/releases),
-extract it, and run `./install.sh`.
+number of people using this, the install script is the whole distribution story. Easiest
+path is the one-liner above (`install-remote.sh`), which fetches the latest release
+tarball automatically; alternatively grab a release from the
+[Releases page](https://github.com/calstfrancis/pereprava/releases) yourself, extract it,
+and run `./install.sh`.
