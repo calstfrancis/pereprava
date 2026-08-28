@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
+from pereprava.logic.host_exec import host_file_exists, which
 from pereprava.logic.rc import RC_CAPABLE_TYPES
 from pereprava.model.job import Job, JobType
 
@@ -25,8 +25,14 @@ def _resolve_bin(name: str, default: str) -> str:
     (.bashrc) is invisible to a desktop session that never sources it, even
     though `which` from a terminal would find it fine. Falls back to the
     historical hardcoded path if nothing is found, matching prior behavior.
+
+    The resolved path is baked into a generated systemd unit's ExecStart=,
+    which systemd always runs as a normal host process — so in the flatpak
+    build this must resolve against the *host's* PATH/filesystem, not the
+    sandbox's (see logic/host_exec.py), even though this function itself
+    also runs unmodified for the non-flatpak install.
     """
-    found = shutil.which(name)
+    found = which(name)
     if found:
         return found
     for candidate in (
@@ -35,7 +41,7 @@ def _resolve_bin(name: str, default: str) -> str:
         Path("/opt/homebrew/bin") / name,
         Path("/home/linuxbrew/.linuxbrew/bin") / name,
     ):
-        if candidate.is_file():
+        if host_file_exists(candidate):
             return str(candidate)
     return default
 

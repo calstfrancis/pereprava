@@ -6,13 +6,15 @@ from __future__ import annotations
 import getpass
 import subprocess
 
+from pereprava.logic.host_exec import host_argv
+
 _TIMEOUT = 5
 
 
 def is_enabled() -> bool:
     try:
         result = subprocess.run(
-            ["loginctl", "show-user", getpass.getuser(), "-p", "Linger", "--value"],
+            host_argv(["loginctl", "show-user", getpass.getuser(), "-p", "Linger", "--value"]),
             capture_output=True,
             text=True,
             timeout=_TIMEOUT,
@@ -26,7 +28,7 @@ def enable() -> bool:
     """Enable lingering for the current user. Returns whether it succeeded."""
     try:
         result = subprocess.run(
-            ["loginctl", "enable-linger"], capture_output=True, text=True, timeout=_TIMEOUT
+            host_argv(["loginctl", "enable-linger"]), capture_output=True, text=True, timeout=_TIMEOUT
         )
     except (OSError, subprocess.TimeoutExpired):
         return False

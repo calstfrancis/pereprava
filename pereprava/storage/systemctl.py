@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import subprocess
 
+from pereprava.logic.host_exec import host_argv
+
 _TIMEOUT = 10
 
 
 def _run(args: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(args, capture_output=True, text=True, timeout=_TIMEOUT)
+    return subprocess.run(host_argv(args), capture_output=True, text=True, timeout=_TIMEOUT)
 
 
 def daemon_reload() -> None:

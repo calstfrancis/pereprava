@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.calstfrancis.pereprava</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>Pereprava</name>
+  <summary>Dashboard for rclone/rsync backup jobs run via systemd --user</summary>
+
+  <description>
+    <p>
+      Pereprava is a GTK4/libadwaita dashboard for rclone/rsync backup jobs run as
+      systemd --user timers, plus persistent rclone mount points run as systemd
+      --user services. See all your jobs at a glance — last run, next run,
+      mounted/unmounted, success/failure — and create or edit them through a form
+      instead of hand-writing systemd units.
+    </p>
+    <p>
+      Non-destructive rclone copy is the default job type. Anything that can
+      delete files at its destination (rclone sync, rclone bisync, rsync
+      --delete, or a custom command) is flagged loudly in the UI and requires an
+      explicit acknowledgment before it can be saved.
+    </p>
+    <ul>
+      <li>Job types: rclone copy/sync/bisync, rclone check, rsync, a persistent rclone mount, or a custom command</li>
+      <li>Include/exclude glob filtering, bandwidth limiting with time-of-day schedules, and pre/post-run hook commands</li>
+      <li>Conditional scheduling — only run on AC power, or only on a specific Wi-Fi network</li>
+      <li>Duplicate and Restore actions, per-job run history, and live transfer progress for rclone jobs</li>
+      <li>Guided remote setup for pCloud (OAuth) and client-side encrypted remotes</li>
+      <li>Desktop notifications the moment a job or mount transitions into a failed state</li>
+      <li>Export/import job definitions, and an optional system tray icon reflecting overall job health</li>
+    </ul>
+    <p>
+      Pereprava manages real systemd --user units and reads whatever host paths
+      your jobs point at, so the flatpak build talks to systemd, rclone, rsync,
+      and systemd-analyze on the host (via the Flatpak portal) rather than trying
+      to bundle its own copies — your jobs, logs, and existing units are exactly
+      the same ones a non-flatpak install would see.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.calstfrancis.pereprava.desktop</launchable>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/calstfrancis/pereprava/main/screenshots/pereprava-main.png</image>
+      <caption>Job list showing last run, next run, and status for scheduled backups and mounts</caption>
+    </screenshot>
+  </screenshots>
+
+  <url type="homepage">https://github.com/calstfrancis/pereprava</url>
+  <url type="bugtracker">https://github.com/calstfrancis/pereprava/issues</url>
+
+  <developer>
+    <name>Cal St Francis</name>
+  </developer>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.6.2" date="2026-07-16">
+      <description>
+        <p>"Common Ground" — reliability fixes for invisible failures.</p>
+        <ul>
+          <li>rclone/rsync are resolved via PATH and common install locations instead of being hardcoded to /usr/bin.</li>
+          <li>A job skipped by an unmet Run Condition is now correctly classified as skipped, not a failure.</li>
+          <li>The Add/Edit form's dry-run "Test" correctly restores the "no changes" message for a genuinely no-op preview.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.6.1" date="2026-07-15">
+      <description>
+        <p>"Open Passage" — fixed the needs-repair dead end, and gave a stuck discrepancy row Edit/Delete actions.</p>
+      </description>
+    </release>
+    <release version="0.6.0" date="2026-07-15">
+      <description>
+        <p>"Still Waters" — the app now keeps monitoring in the background when the window is closed, with an optional system tray icon reflecting overall job health, and a mount-point fix for a stray KDE metadata file that could trip rclone's empty-destination safety check.</p>
+      </description>
+    </release>
+    <release version="0.5.0" date="2026-07-15">
+      <description>
+        <p>"Steady Current" — live transfer progress for rclone jobs via an opt-in loopback control API, shown as a real percent/speed/ETA instead of just "Running…".</p>
+      </description>
+    </release>
+    <release version="0.4.0" date="2026-07-15">
+      <description>
+        <p>"Third Crossing" — rclone check, bandwidth limits, include/exclude filters, pre/post-run hooks, conditional scheduling, job duplication, one-click restore, per-job run history, guided encrypted-remote setup, and remote quota display.</p>
+      </description>
+    </release>
+    <release version="0.3.0" date="2026-07-13">
+      <description>
+        <p>"Second Crossing" — dry-run testing, export/import, failure notifications, remote validation, and guided pCloud setup.</p>
+      </description>
+    </release>
+    <release version="0.2.0" date="2026-07-13">
+      <description>
+        <p>"Anchor" — added the rclone mount job type.</p>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-07-11">
+      <description>
+        <p>"First Crossing" — initial release: log-file picker, uninstall script, changelog polish.</p>
+      </description>
+    </release>
+  </releases>
+</component>

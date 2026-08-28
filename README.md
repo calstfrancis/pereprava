@@ -62,7 +62,23 @@ acknowledgment before it can be saved.
 
 ## Installing
 
-One-liner (downloads the latest release and installs it):
+**Flatpak** (recommended):
+
+```sh
+flatpak remote-add --user --if-not-exists calstfrancis \
+  https://calstfrancis.github.io/flatpak/calstfrancis.flatpakrepo
+flatpak install calstfrancis io.github.calstfrancis.pereprava
+```
+
+The flatpak build still manages real `systemd --user` units and calls `systemctl`,
+`rclone`, `rsync`, `systemd-analyze`, and `loginctl` on the host (via the Flatpak portal,
+`flatpak-spawn --host`) rather than bundling its own copies — a job's actual scheduled
+execution always runs as a normal host process via systemd regardless, sandbox or not — so
+your jobs, history, and logs are exactly the same ones a non-flatpak install would see. See
+[Packaging](#packaging) below.
+
+**Install script**, if you'd rather not add a flatpak remote — one-liner (downloads the
+latest release and installs it):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/calstfrancis/pereprava/main/install-remote.sh | bash
@@ -81,6 +97,10 @@ GTK4/libadwaita bindings rather than trying to build `pycairo` from source (whic
 and a desktop entry — make sure `~/.local/bin` is on your `PATH`.
 
 ## Uninstalling
+
+Flatpak: `flatpak uninstall io.github.calstfrancis.pereprava`.
+
+Install script:
 
 ```sh
 ./uninstall.sh
@@ -104,10 +124,23 @@ want that.
 
 ## Packaging
 
-No flatpak — Pereprava needs to control host `systemd --user` units and read arbitrary
-host paths, both of which fight the flatpak sandbox model. No RPM either; for the small
-number of people using this, the install script is the whole distribution story. Easiest
-path is the one-liner above (`install-remote.sh`), which fetches the latest release
-tarball automatically; alternatively grab a release from the
+Distributed as a flatpak (self-hosted repo, see [Installing](#installing) above) and via
+the plain install script — no RPM.
+
+Pereprava needs to control host `systemd --user` units, read arbitrary host paths, and run
+`rclone mount`'s FUSE mounts as real host mounts, none of which are things a flatpak
+sandbox does for free. Rather than granting broad device/filesystem permissions and hoping
+those still work from inside the container, the flatpak build routes every host-only
+binary call — `systemctl`, `rclone`, `rsync`, `systemd-analyze`, `loginctl` — through
+`flatpak-spawn --host` (see `pereprava/logic/host_exec.py`), which runs them as genuine
+host processes via the Flatpak portal. A job's actual scheduled execution was already a
+plain host process either way, since systemd itself is a host daemon — the sandbox only
+ever wraps the GUI. `--filesystem=home` is still granted (matching every other app in this
+suite) so config, job history, and logs at their usual `~/.config`/`~/.local/share` paths
+are unchanged between a flatpak install and the install-script one.
+
+If you'd rather not add a flatpak remote, the install script remains fully supported:
+the one-liner above (`install-remote.sh`) fetches the latest release tarball
+automatically, or grab a release from the
 [Releases page](https://github.com/calstfrancis/pereprava/releases) yourself, extract it,
 and run `./install.sh`.

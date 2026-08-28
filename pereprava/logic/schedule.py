@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 
+from pereprava.logic.host_exec import host_argv
 from pereprava.model.job import SCHEDULE_PRESETS
 
 PRESET_LABELS: dict[str, str] = {
@@ -31,7 +32,7 @@ def validate_on_calendar(value: str) -> tuple[bool, str]:
         return False, "Schedule cannot be empty."
     try:
         result = subprocess.run(
-            ["systemd-analyze", "calendar", value],
+            host_argv(["systemd-analyze", "calendar", value]),
             capture_output=True,
             text=True,
             timeout=5,

@@ -15,6 +15,7 @@ import re
 import subprocess
 
 from pereprava.logic.command import RCLONE_BIN, build_argv
+from pereprava.logic.host_exec import host_argv
 from pereprava.model.job import Job, JobType
 
 # rclone's own stats footer (always printed at -v, which build_argv always
@@ -52,7 +53,7 @@ def start_test(job: Job) -> subprocess.Popen:
         argv = build_argv(job)  # check never writes anything — it IS already a dry run
     else:
         argv = build_argv(job) + ["--dry-run"]
-    return subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    return subprocess.Popen(host_argv(argv), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 
 def interpret_result(job: Job, returncode: int, stdout: str, stderr: str) -> tuple[bool, str]:

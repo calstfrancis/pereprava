@@ -1,0 +1,50 @@
+app-id: io.github.calstfrancis.pereprava
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+command: pereprava
+
+# Pereprava manages real `systemd --user` units, and its jobs shell out to
+# rclone/rsync/systemd-analyze/loginctl — none of which are part of the GNOME
+# runtime, and systemd itself is a host daemon regardless. --talk-name=org.
+# freedesktop.Flatpak lets the app use `flatpak-spawn --host` (see
+# pereprava/logic/host_exec.py) to run those as real host processes instead of
+# looking for them inside the sandbox. --filesystem=home matches every other
+# app in this suite (config/data under ~/.config, ~/.local/share) and, for
+# Pereprava specifically, is also what lets a flatpak install pick up jobs,
+# history, and logs from an existing non-flatpak install unchanged. A job's
+# actual ExecStart always runs as a normal host process via systemd, outside
+# the sandbox entirely (including rclone mount's FUSE mount, which is why no
+# FUSE/device permission is needed here) — the sandbox only wraps the GUI.
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --filesystem=home
+  - --share=network
+  - --talk-name=org.freedesktop.portal.Desktop
+  - --talk-name=org.freedesktop.Flatpak
+
+modules:
+  - name: pereprava
+    buildsystem: simple
+    sources:
+      - type: git
+        url: https://github.com/calstfrancis/pereprava.git
+        branch: main
+      - type: file
+        path: io.github.calstfrancis.pereprava.metainfo.xml
+    build-commands:
+      - pip3 install --prefix=/app --no-build-isolation .
+      - install -Dm644 io.github.calstfrancis.pereprava.desktop /app/share/applications/io.github.calstfrancis.pereprava.desktop
+      - install -Dm644 pereprava/data/io.github.calstfrancis.pereprava.svg /app/share/icons/hicolor/scalable/apps/io.github.calstfrancis.pereprava.svg
+      # Rasterise the same sizes alongside the SVG — a launcher that doesn't
+      # invoke an SVG loader shows a blank/generic icon for SVG-only apps.
+      - |
+        for SIZE in 48 128 256; do
+          mkdir -p "/app/share/icons/hicolor/${SIZE}x${SIZE}/apps"
+          rsvg-convert -w "${SIZE}" -h "${SIZE}" pereprava/data/io.github.calstfrancis.pereprava.svg \
+            -o "/app/share/icons/hicolor/${SIZE}x${SIZE}/apps/io.github.calstfrancis.pereprava.png"
+        done
+      - install -Dm644 io.github.calstfrancis.pereprava.metainfo.xml /app/share/metainfo/io.github.calstfrancis.pereprava.metainfo.xml

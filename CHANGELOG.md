@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.0-dev1] — unreleased
+
+### Added
+- Flatpak distribution, alongside the existing install script — `flatpak install calstfrancis io.github.calstfrancis.pereprava` once published. Pereprava still manages real `systemd --user` units and calls `systemctl`/`rclone`/`rsync`/`systemd-analyze`/`loginctl` on the host (via `flatpak-spawn --host`, see `pereprava/logic/host_exec.py`) rather than bundling its own copies, since a job's actual scheduled execution was already a plain host process either way (systemd is a host daemon) and none of those binaries are part of the GNOME flatpak runtime. `--filesystem=home` keeps config/history/logs at the same paths as the install-script distribution, so an existing non-flatpak install's jobs are picked up unchanged.
+- New app icon (`pereprava/data/io.github.calstfrancis.pereprava.svg`), installed for both distributions — the desktop file previously pointed at the generic stock `folder-remote` icon.
+
 ## [0.6.2] "Common Ground" — 2026-07-16
 
 ### Fixed

@@ -18,9 +18,7 @@ exec "$(pwd)/.venv/bin/pereprava" "\$@"
 EOF
 chmod +x "$BIN_DIR/pereprava"
 
-DESKTOP_DIR="$HOME/.local/share/applications"
-mkdir -p "$DESKTOP_DIR"
-cp io.github.calstfrancis.pereprava.desktop "$DESKTOP_DIR/"
-update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
+# Install desktop entry and icon
+.venv/bin/python3 -m pereprava.desktop_install
 
 echo "Installed. Make sure $BIN_DIR is on your PATH, then run: pereprava"

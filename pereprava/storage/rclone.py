@@ -10,6 +10,8 @@ import json
 import re
 import subprocess
 
+from pereprava.logic.host_exec import host_argv
+
 _TIMEOUT = 20
 _AUTHORIZE_TIMEOUT = 300  # generous: waiting on the user to approve in their browser
 _TOKEN_RE = re.compile(r"\{.*\}")
@@ -19,7 +21,7 @@ def list_remotes() -> list[str]:
     """Return configured remote names, e.g. ["pcloud:"]."""
     try:
         result = subprocess.run(
-            ["rclone", "listremotes"], capture_output=True, text=True, timeout=_TIMEOUT
+            host_argv(["rclone", "listremotes"]), capture_output=True, text=True, timeout=_TIMEOUT
         )
     except (OSError, subprocess.TimeoutExpired):
         return []
@@ -33,7 +35,7 @@ def list_dirs(remote: str, path: str) -> list[str]:
     target = f"{remote}{path}"
     try:
         result = subprocess.run(
-            ["rclone", "lsjson", target, "--dirs-only"],
+            host_argv(["rclone", "lsjson", target, "--dirs-only"]),
             capture_output=True,
             text=True,
             timeout=_TIMEOUT,
@@ -55,7 +57,7 @@ def start_pcloud_authorize() -> subprocess.Popen:
     JSON token blob to stdout. Caller runs this off the GTK main thread and can
     terminate() the returned process to cancel."""
     return subprocess.Popen(
-        ["rclone", "authorize", "pcloud"],
+        host_argv(["rclone", "authorize", "pcloud"]),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -72,7 +74,7 @@ def create_pcloud_remote(name: str, token: str) -> tuple[bool, str]:
     """Finish setup non-interactively with a token from start_pcloud_authorize()."""
     try:
         result = subprocess.run(
-            ["rclone", "config", "create", name, "pcloud", "token", token],
+            host_argv(["rclone", "config", "create", name, "pcloud", "token", token]),
             capture_output=True,
             text=True,
             timeout=_TIMEOUT,
@@ -89,7 +91,7 @@ def obscure_password(password: str) -> tuple[bool, str]:
     already-obscured when created non-interactively via `config create`."""
     try:
         result = subprocess.run(
-            ["rclone", "obscure", password], capture_output=True, text=True, timeout=_TIMEOUT
+            host_argv(["rclone", "obscure", password]), capture_output=True, text=True, timeout=_TIMEOUT
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return False, f"Could not run rclone: {exc}"
@@ -107,7 +109,7 @@ def create_crypt_remote(
     if obscured_password2:
         args += ["password2", obscured_password2]
     try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=_TIMEOUT)
+        result = subprocess.run(host_argv(args), capture_output=True, text=True, timeout=_TIMEOUT)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return False, f"Could not run rclone: {exc}"
     if result.returncode != 0:
@@ -120,7 +122,7 @@ def get_about(remote: str) -> dict | None:
     backend doesn't support it (some remotes don't) or the call fails."""
     try:
         result = subprocess.run(
-            ["rclone", "about", remote, "--json"], capture_output=True, text=True, timeout=_TIMEOUT
+            host_argv(["rclone", "about", remote, "--json"]), capture_output=True, text=True, timeout=_TIMEOUT
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
