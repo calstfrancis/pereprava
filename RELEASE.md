@@ -1,32 +1,27 @@
-# Pereprava v0.7.0 "Anchored Passage"
+# Pereprava v0.7.1 "True Reading"
 
 **Released:** 2026-09-04
 
 ## What's new
 
-Pereprava is now available as a **flatpak**, alongside the existing install script —
-no more venv setup to get started.
+A small fix for a status display bug:
 
-- **Flatpak distribution.** `flatpak install calstfrancis io.github.calstfrancis.pereprava`
-  and you're running. Under the hood, Pereprava still manages real `systemd --user`
-  units and calls `systemctl`/`rclone`/`rsync`/`systemd-analyze`/`loginctl` directly on
-  the *host* rather than bundling its own copies — none of those are part of the GNOME
-  runtime, and a job's actual scheduled execution was always a plain host process via
-  systemd regardless of any sandbox. Config, job history, and logs stay at the same
-  `~/.config`/`~/.local/share` paths as the install-script distribution, so installing
-  the flatpak on a machine with an existing non-flatpak install picks up its jobs
-  unchanged.
-- **New app icon**, installed for both distributions — the desktop file previously
-  pointed at the generic stock "folder-remote" icon.
+- **A job no longer gets stuck showing "Skipped — a Run Condition isn't met"** after its
+  AC-power/Wi-Fi condition has been removed (or was never set in the first place).
+  systemd's own condition-result tracking only refreshes the next time a unit actually
+  starts, not when you edit and save a job — so removing a condition could leave the
+  status display permanently stuck on a stale skip from before the edit, with no
+  condition left configured to explain it. The status display now only reports a
+  condition skip when the job's current settings actually define one.
 
 See [CHANGELOG.md](CHANGELOG.md) for everything since the last release, including
-v0.6.2 "Common Ground" (reliability fixes for invisible failures), v0.6.1 "Open
-Passage" (fixing a "needs repair" dead end), v0.6.0 "Still Waters" (background
-persistence, optional tray icon, a mount-point fix), v0.5.0 "Steady Current" (live
-transfer progress), and v0.4.0 "Third Crossing" (`rclone check`, bandwidth limits,
-include/exclude filters, pre/post-run hooks, conditional scheduling, job duplication,
-one-click restore, per-job run history, guided encrypted-remote setup, and remote
-quota display).
+v0.7.0 "Anchored Passage" (flatpak distribution), v0.6.2 "Common Ground" (reliability
+fixes for invisible failures), v0.6.1 "Open Passage" (fixing a "needs repair" dead
+end), v0.6.0 "Still Waters" (background persistence, optional tray icon, a mount-point
+fix), v0.5.0 "Steady Current" (live transfer progress), and v0.4.0 "Third Crossing"
+(`rclone check`, bandwidth limits, include/exclude filters, pre/post-run hooks,
+conditional scheduling, job duplication, one-click restore, per-job run history,
+guided encrypted-remote setup, and remote quota display).
 
 ## Download
 
@@ -45,13 +40,15 @@ flatpak remote-add --user calstfrancis \
 flatpak install calstfrancis io.github.calstfrancis.pereprava
 ```
 
+Already installed? `flatpak update` picks this up.
+
 ### Install script
 
 ```bash
-curl -L -o pereprava-0.7.0.tar.gz \
-  https://github.com/calstfrancis/pereprava/archive/refs/tags/v0.7.0.tar.gz
-tar xzf pereprava-0.7.0.tar.gz
-cd pereprava-0.7.0
+curl -L -o pereprava-0.7.1.tar.gz \
+  https://github.com/calstfrancis/pereprava/archive/refs/tags/v0.7.1.tar.gz
+tar xzf pereprava-0.7.1.tar.gz
+cd pereprava-0.7.1
 ./install.sh
 pereprava
 ```

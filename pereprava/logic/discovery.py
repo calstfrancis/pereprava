@@ -54,7 +54,7 @@ def scan() -> tuple[list[JobEntry], list[Discrepancy]]:
             job = jobs_store.load_job(slug)
         except (OSError, ValueError, KeyError):
             continue
-        entries.append(JobEntry(job=job, status=get_job_status(slug, job.job_type)))
+        entries.append(JobEntry(job=job, status=get_job_status(job)))
 
     discrepancies: list[Discrepancy] = []
     for slug in sorted(unmanaged):

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.1] "True Reading" — 2026-09-04
+
+### Fixed
+- A job no longer shows "Skipped — a Run Condition isn't met" after its AC-power/Wi-Fi
+  condition has been removed (or was never set). systemd's `ConditionResult`/`Result`
+  properties are sticky — they reflect the outcome of the *last activation attempt* and
+  aren't reset by `daemon-reload`, only by the unit's next actual start — so editing a
+  condition away could leave the status display stuck on a stale skip indefinitely, with
+  no condition currently configured to explain it. Status now only reports a condition
+  skip when the job's *current* settings actually define one.
+
 ## [0.7.0] "Anchored Passage" — 2026-09-04
 
 ### Added

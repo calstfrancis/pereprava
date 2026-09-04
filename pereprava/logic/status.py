@@ -6,7 +6,7 @@ import re
 from datetime import datetime
 
 from pereprava.logic.units import unit_basename
-from pereprava.model.job import JobType
+from pereprava.model.job import Job, JobType
 from pereprava.model.status import JobStatus, RunState
 from pereprava.storage import systemctl
 
@@ -37,7 +37,7 @@ def _parse_epoch_field(entry: dict, *keys: str) -> datetime | None:
     return None
 
 
-def _condition_unmet(props: dict) -> bool:
+def _condition_unmet(props: dict, has_condition: bool) -> bool:
     """True if the unit's last start attempt was silently skipped by a Run
     Condition (ConditionACPower= or the Wi-Fi SSID ExecCondition=) — systemd
     treats this as a routine skip, not a failure: no error, no exec attempt,
@@ -47,11 +47,22 @@ def _condition_unmet(props: dict) -> bool:
     code. Folded directly into `state` as RunState.SKIPPED rather than a
     separate flag, so every consumer that already switches on `state` (the
     tray icon, desktop notifications, run history) handles this correctly by
-    construction instead of needing to separately learn a new field exists."""
+    construction instead of needing to separately learn a new field exists.
+
+    `has_condition` gates this on the job's *current* settings, not just
+    systemd's report: ConditionResult/Result are sticky — they reflect the
+    outcome of the last activation attempt and don't get reset by a
+    daemon-reload, only by the unit's next actual start. If a job's condition
+    is edited away (or was never set), a stale "no"/"exec-condition" from
+    before that edit — or from a different job's unit basename reused after
+    a slug collision, in principle — would otherwise keep reporting a skip
+    that can no longer happen given the job as currently configured."""
+    if not has_condition:
+        return False
     return props.get("ConditionResult") == "no" or props.get("Result") == "exec-condition"
 
 
-def _get_mount_status(service_unit: str) -> JobStatus:
+def _get_mount_status(service_unit: str, has_condition: bool) -> JobStatus:
     """Mount jobs have no timer — the service itself is the enabled/running unit,
     and its steady state (mounted and idle) is what other job types call OK."""
     service_props = systemctl.show_properties(
@@ -67,7 +78,7 @@ def _get_mount_status(service_unit: str) -> JobStatus:
         state = RunState.RUNNING
     elif not enabled:
         state = RunState.PAUSED
-    elif _condition_unmet(service_props):
+    elif _condition_unmet(service_props, has_condition):
         state = RunState.SKIPPED
     elif active_state == "failed" or (result and result != "success"):
         state = RunState.FAILED
@@ -85,12 +96,13 @@ def _get_mount_status(service_unit: str) -> JobStatus:
     )
 
 
-def get_job_status(slug: str, job_type: JobType) -> JobStatus:
-    base = unit_basename(slug)
+def get_job_status(job: Job) -> JobStatus:
+    base = unit_basename(job.slug)
     service_unit = f"{base}.service"
+    has_condition = job.condition_ac_power or bool(job.condition_ssid.strip())
 
-    if job_type == JobType.RCLONE_MOUNT:
-        return _get_mount_status(service_unit)
+    if job.job_type == JobType.RCLONE_MOUNT:
+        return _get_mount_status(service_unit, has_condition)
 
     timer_unit = f"{base}.timer"
 
@@ -124,7 +136,7 @@ def get_job_status(slug: str, job_type: JobType) -> JobStatus:
         state = RunState.RUNNING
     elif not timer_enabled:
         state = RunState.PAUSED
-    elif _condition_unmet(service_props):
+    elif _condition_unmet(service_props, has_condition):
         state = RunState.SKIPPED
     elif last_run is None:
         state = RunState.IDLE
