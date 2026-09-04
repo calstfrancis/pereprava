@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.2] "True Marker" — 2026-09-04
+
+### Fixed
+- The in-app version number (status bar button, and the "What's New" popup trigger) was
+  stuck reading "0.6.2" through the 0.7.0 and 0.7.1 releases, regardless of what version
+  was actually installed — a fresh 0.7.1 flatpak install genuinely displayed "v0.6.2" and
+  never showed What's New. `pereprava/__init__.py`'s `__version__` was a second,
+  independently-tracked version string that never got bumped alongside `pyproject.toml`.
+  `pyproject.toml` now reads its version dynamically from `__init__.py`, so there is only
+  one place to update and this can't drift again.
+- `release-flatpak.yml` and `publish-flatpak.sh` now refuse to publish any version
+  containing a `-` (dev/rc suffix). A manual `workflow_dispatch` test run of the release
+  workflow isn't gated by the tag-push pattern the way a real release is, and one such run
+  briefly published a real `0.7.0-dev1` build to the public flatpak repo before being
+  overwritten by the genuine 0.7.0 release — this closes that gap.
+
 ## [0.7.1] "True Reading" — 2026-09-04
 
 ### Fixed

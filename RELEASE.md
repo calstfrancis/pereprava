@@ -1,27 +1,33 @@
-# Pereprava v0.7.1 "True Reading"
+# Pereprava v0.7.2 "True Marker"
 
 **Released:** 2026-09-04
 
 ## What's new
 
-A small fix for a status display bug:
+A correctness fix for the release process itself:
 
-- **A job no longer gets stuck showing "Skipped — a Run Condition isn't met"** after its
-  AC-power/Wi-Fi condition has been removed (or was never set in the first place).
-  systemd's own condition-result tracking only refreshes the next time a unit actually
-  starts, not when you edit and save a job — so removing a condition could leave the
-  status display permanently stuck on a stale skip from before the edit, with no
-  condition left configured to explain it. The status display now only reports a
-  condition skip when the job's current settings actually define one.
+- **The in-app version number was stuck on "0.6.2"** through the 0.7.0 and 0.7.1
+  releases — the status bar's version button, and the check that decides whether to show
+  the "What's New" popup after an update, were both reading a second version string that
+  never got bumped alongside the real one. A fresh install of 0.7.1 genuinely displayed
+  "v0.6.2" and never popped up What's New. That's fixed now, and restructured so there's
+  only one place the version lives going forward — it can't drift out of sync again.
+- **The release pipeline now refuses to ever publish a dev/pre-release build** to the
+  public flatpak repo, closing a gap where a one-off test run of the release workflow
+  could publish an in-progress dev version before a real release was ready.
 
-See [CHANGELOG.md](CHANGELOG.md) for everything since the last release, including
-v0.7.0 "Anchored Passage" (flatpak distribution), v0.6.2 "Common Ground" (reliability
-fixes for invisible failures), v0.6.1 "Open Passage" (fixing a "needs repair" dead
-end), v0.6.0 "Still Waters" (background persistence, optional tray icon, a mount-point
-fix), v0.5.0 "Steady Current" (live transfer progress), and v0.4.0 "Third Crossing"
-(`rclone check`, bandwidth limits, include/exclude filters, pre/post-run hooks,
-conditional scheduling, job duplication, one-click restore, per-job run history,
-guided encrypted-remote setup, and remote quota display).
+Nothing else changed — if you're on 0.7.1 already, this is purely about the version
+number Pereprava reports about itself.
+
+See [CHANGELOG.md](CHANGELOG.md) for everything since the last few releases, including
+v0.7.1 "True Reading" (a stuck Run Condition status fix), v0.7.0 "Anchored Passage"
+(flatpak distribution), v0.6.2 "Common Ground" (reliability fixes for invisible
+failures), v0.6.1 "Open Passage" (fixing a "needs repair" dead end), v0.6.0 "Still
+Waters" (background persistence, optional tray icon, a mount-point fix), v0.5.0 "Steady
+Current" (live transfer progress), and v0.4.0 "Third Crossing" (`rclone check`,
+bandwidth limits, include/exclude filters, pre/post-run hooks, conditional scheduling,
+job duplication, one-click restore, per-job run history, guided encrypted-remote setup,
+and remote quota display).
 
 ## Download
 
@@ -45,10 +51,10 @@ Already installed? `flatpak update` picks this up.
 ### Install script
 
 ```bash
-curl -L -o pereprava-0.7.1.tar.gz \
-  https://github.com/calstfrancis/pereprava/archive/refs/tags/v0.7.1.tar.gz
-tar xzf pereprava-0.7.1.tar.gz
-cd pereprava-0.7.1
+curl -L -o pereprava-0.7.2.tar.gz \
+  https://github.com/calstfrancis/pereprava/archive/refs/tags/v0.7.2.tar.gz
+tar xzf pereprava-0.7.2.tar.gz
+cd pereprava-0.7.2
 ./install.sh
 pereprava
 ```

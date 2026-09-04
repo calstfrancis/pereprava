@@ -57,7 +57,17 @@ jobs:
             echo "ci.yml '$JOB' for $SHA: $CONCLUSION"
           done
 
-      # Mirrors publish-flatpak.sh's own sanity check.
+      # Mirrors publish-flatpak.sh's own sanity check. pyproject.toml's version is dynamic
+      # (resolved from pereprava/__init__.py's __version__), so read that directly rather
+      # than grepping pyproject.toml itself.
+      #
+      # Also refuses to publish a dev/pre-release version (one containing "-") even under
+      # workflow_dispatch: the push-tag trigger above only matches a clean "vX.Y.Z", but a
+      # manual dispatch (meant for testing this workflow itself) has no tag to gate it and
+      # will happily build+publish whatever pyproject.toml/__init__.py says main is at right
+      # now. This is exactly what let a real "0.7.0-dev1" build reach the public flatpak
+      # repo on 2026-09-04 — a workflow_dispatch test run executed while main sat on a dev
+      # version, with nothing here to stop it.
       - name: Verify version matches pyproject.toml
         run: |
           set -euo pipefail
@@ -65,9 +75,14 @@ jobs:
           if [[ -z "$VERSION" ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
           fi
-          TOML_VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          if [[ "$TOML_VERSION" != "$VERSION" ]]; then
-            echo "ERROR: pyproject.toml says version is '$TOML_VERSION', but this run is for '$VERSION'."
+          APP_VERSION=$(grep -m1 '^__version__' pereprava/__init__.py | sed -E "s/.*[\"']([^\"']+)[\"'].*/\1/")
+          if [[ "$APP_VERSION" != "$VERSION" ]]; then
+            echo "ERROR: pereprava/__init__.py says version is '$APP_VERSION', but this run is for '$VERSION'."
+            exit 1
+          fi
+          if [[ "$VERSION" == *-* ]]; then
+            echo "ERROR: '$VERSION' looks like a dev/pre-release version (contains '-')."
+            echo "Dev builds must never reach the public flatpak repo — refusing to publish."
             exit 1
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"

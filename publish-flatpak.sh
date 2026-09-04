@@ -34,10 +34,19 @@ if [[ $# -ne 1 ]]; then
 fi
 VERSION="$1"
 
-TOML_VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-if [[ "$TOML_VERSION" != "$VERSION" ]]; then
-  echo "ERROR: pyproject.toml says '$TOML_VERSION', but you passed '$VERSION'."
+# pyproject.toml's version is dynamic (resolved from pereprava/__init__.py's __version__ —
+# see CLAUDE.md's "Version files by project"), so read the actual source of truth directly
+# rather than grepping pyproject.toml itself.
+APP_VERSION=$(grep -m1 '^__version__' pereprava/__init__.py | sed -E 's/.*["'"'"']([^"'"'"']+)["'"'"'].*/\1/')
+if [[ "$APP_VERSION" != "$VERSION" ]]; then
+  echo "ERROR: pereprava/__init__.py says '$APP_VERSION', but you passed '$VERSION'."
   echo "Did you forget the version bump? (Ask Claude to do the version bump + docs first.)"
+  exit 1
+fi
+
+if [[ "$VERSION" == *-* ]]; then
+  echo "ERROR: '$VERSION' looks like a dev/pre-release version (contains '-')."
+  echo "publish-flatpak.sh is for real releases only — dev builds must never reach the public flatpak repo."
   exit 1
 fi
 

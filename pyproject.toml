@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pereprava"
-version = "0.7.1"
+dynamic = ["version"]
 description = "Pereprava — a dashboard for rclone/rsync backup jobs run via systemd --user"
 readme = "README.md"
 license = {text = "MIT"}
@@ -27,6 +27,9 @@ pereprava = "pereprava.pereprava:main"
 
 [tool.setuptools]
 packages = ["pereprava", "pereprava.model", "pereprava.logic", "pereprava.storage", "pereprava.ui"]
+
+[tool.setuptools.dynamic]
+version = { attr = "pereprava.__version__" }
 
 [tool.setuptools.package-data]
 pereprava = ["data/*.svg"]
