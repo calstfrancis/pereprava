@@ -58,6 +58,15 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.7.0" date="2026-09-04">
+      <description>
+        <p>"Anchored Passage" — flatpak distribution.</p>
+        <ul>
+          <li>Pereprava is now available as a flatpak alongside the existing install script. It still manages real systemd --user units and calls systemctl/rclone/rsync/systemd-analyze/loginctl on the host rather than bundling its own copies, so an existing non-flatpak install's jobs are picked up unchanged.</li>
+          <li>New app icon, installed for both distributions.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.6.2" date="2026-07-16">
       <description>
         <p>"Common Ground" — reliability fixes for invisible failures.</p>
