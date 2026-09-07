@@ -47,6 +47,16 @@ def save_and_apply(job: Job) -> tuple[bool, str]:
 
 def delete_job_and_units(job: Job) -> tuple[bool, str]:
     result = systemctl.disable_now(_managed_unit(job))
+    if job.job_type != JobType.RCLONE_MOUNT:
+        # The oneshot backup service is never enabled/disabled itself (only
+        # ever started transiently via run_now), so disabling the timer above
+        # never touches it. If it's still running — or finished but not yet
+        # garbage-collected by systemd — it stays loaded even after its unit
+        # file is removed below, and the next discovery scan finds a loaded
+        # unit with no matching job JSON and reports it as unmanaged.
+        service = f"{unit_basename(job.slug)}.service"
+        systemctl.stop_now(service)
+        systemctl.reset_failed(service)
     units_io.remove_units(job.slug)
     systemctl.daemon_reload()
     jobs_store.delete_job(job.slug)

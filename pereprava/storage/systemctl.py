@@ -26,6 +26,14 @@ def disable_now(unit: str) -> subprocess.CompletedProcess:
     return _run(["systemctl", "--user", "disable", "--now", unit])
 
 
+def stop_now(unit: str) -> subprocess.CompletedProcess:
+    return _run(["systemctl", "--user", "stop", unit])
+
+
+def reset_failed(unit: str) -> None:
+    _run(["systemctl", "--user", "reset-failed", unit])
+
+
 def start_now(unit: str) -> subprocess.CompletedProcess:
     # --no-block: return immediately rather than waiting for a oneshot job to
     # finish (which can take minutes for a large rclone/rsync transfer) — this
