@@ -1,33 +1,34 @@
-# Pereprava v0.7.2 "True Marker"
+# Pereprava v0.7.3 "Clean Wake"
 
-**Released:** 2026-09-04
+**Released:** 2026-09-07
 
 ## What's new
 
-A correctness fix for the release process itself:
+A correctness fix for job deletion:
 
-- **The in-app version number was stuck on "0.6.2"** through the 0.7.0 and 0.7.1
-  releases — the status bar's version button, and the check that decides whether to show
-  the "What's New" popup after an update, were both reading a second version string that
-  never got bumped alongside the real one. A fresh install of 0.7.1 genuinely displayed
-  "v0.6.2" and never popped up What's New. That's fixed now, and restructured so there's
-  only one place the version lives going forward — it can't drift out of sync again.
-- **The release pipeline now refuses to ever publish a dev/pre-release build** to the
-  public flatpak repo, closing a gap where a one-off test run of the release workflow
-  could publish an in-progress dev version before a real release was ready.
+- **Deleting a periodic backup job could leave behind a phantom "unmanaged unit."**
+  Deletion only ever disabled the job's *timer* — its oneshot backup service is never
+  enabled itself, only started transiently by Run Now. If that service was still loaded
+  in systemd at delete time (still running, or just finished and not yet garbage-collected
+  — easy to hit by testing a freshly created job with Run Now and then deleting it within
+  the next few minutes), it outlived the deleted unit files and the job's own JSON. The
+  next scan then found a loaded unit with no matching job and flagged it under Needs
+  Attention as "isn't managed by Pereprava," even though Pereprava had created and run it
+  moments before. Deleting a job now also stops that service and clears any failed state,
+  so nothing is left behind to misreport.
 
-Nothing else changed — if you're on 0.7.1 already, this is purely about the version
-number Pereprava reports about itself.
+If you already hit this before updating: use the **Remove** button on the stray entry
+under Needs Attention to clear it — no need to wait for the update first.
 
 See [CHANGELOG.md](CHANGELOG.md) for everything since the last few releases, including
-v0.7.1 "True Reading" (a stuck Run Condition status fix), v0.7.0 "Anchored Passage"
-(flatpak distribution), v0.6.2 "Common Ground" (reliability fixes for invisible
-failures), v0.6.1 "Open Passage" (fixing a "needs repair" dead end), v0.6.0 "Still
-Waters" (background persistence, optional tray icon, a mount-point fix), v0.5.0 "Steady
-Current" (live transfer progress), and v0.4.0 "Third Crossing" (`rclone check`,
-bandwidth limits, include/exclude filters, pre/post-run hooks, conditional scheduling,
-job duplication, one-click restore, per-job run history, guided encrypted-remote setup,
-and remote quota display).
+v0.7.2 "True Marker" (fixed a stuck in-app version display), v0.7.1 "True Reading" (a
+stuck Run Condition status fix), v0.7.0 "Anchored Passage" (flatpak distribution), v0.6.2
+"Common Ground" (reliability fixes for invisible failures), v0.6.1 "Open Passage" (fixing
+a "needs repair" dead end), v0.6.0 "Still Waters" (background persistence, optional tray
+icon, a mount-point fix), v0.5.0 "Steady Current" (live transfer progress), and v0.4.0
+"Third Crossing" (`rclone check`, bandwidth limits, include/exclude filters, pre/post-run
+hooks, conditional scheduling, job duplication, one-click restore, per-job run history,
+guided encrypted-remote setup, and remote quota display).
 
 ## Download
 
@@ -51,10 +52,10 @@ Already installed? `flatpak update` picks this up.
 ### Install script
 
 ```bash
-curl -L -o pereprava-0.7.2.tar.gz \
-  https://github.com/calstfrancis/pereprava/archive/refs/tags/v0.7.2.tar.gz
-tar xzf pereprava-0.7.2.tar.gz
-cd pereprava-0.7.2
+curl -L -o pereprava-0.7.3.tar.gz \
+  https://github.com/calstfrancis/pereprava/archive/refs/tags/v0.7.3.tar.gz
+tar xzf pereprava-0.7.3.tar.gz
+cd pereprava-0.7.3
 ./install.sh
 pereprava
 ```

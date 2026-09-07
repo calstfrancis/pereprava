@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.3] "Clean Wake" — 2026-09-07
+
+### Fixed
+- Deleting a periodic job (rclone/rsync backup, not a mount) only disabled its timer via
+  `disable_now(_managed_unit(job))` — the timer is the only unit that job type ever has
+  enabled or disabled; its oneshot backup service is never enabled itself, only ever
+  started transiently via Run Now. If that service was still loaded in systemd at delete
+  time (still running, or just finished and not yet garbage-collected — easy to trigger by
+  Run Now-ing a freshly created job and then deleting it within the next few minutes), it
+  survived `units_io.remove_units()` and `daemon-reload`, outliving the job's own JSON.
+  The next discovery scan (`logic/discovery.py`) then found a loaded unit with no matching
+  job and reported it as `UNMANAGED_UNIT` — shown in Needs Attention as "Unit exists but
+  isn't managed by Pereprava" — for a job Pereprava had created and run minutes earlier.
+  `delete_job_and_units()` now also stops the oneshot service and clears its failed state
+  (`systemctl reset-failed`) before removing unit files, for every non-mount job.
+
 ## [0.7.2] "True Marker" — 2026-09-04
 
 ### Fixed
