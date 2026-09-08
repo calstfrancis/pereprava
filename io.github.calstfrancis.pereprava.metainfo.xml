@@ -58,6 +58,17 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.7.4" date="2026-09-08">
+      <description>
+        <p>"Charted Passage" — fixes the in-app changelog viewer showing nothing under the flatpak install.</p>
+        <ul>
+          <li>The Changelog window (opened from the version button) looked for CHANGELOG.md
+          at a path that only resolves for an editable/dev install. It's now bundled into
+          the package so the flatpak install can find it too, with a clear "not found"
+          message if it ever can't.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.7.3" date="2026-09-07">
       <description>
         <p>"Clean Wake" — fixes a just-deleted job reappearing as an unmanaged unit.</p>

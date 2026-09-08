@@ -32,4 +32,4 @@ packages = ["pereprava", "pereprava.model", "pereprava.logic", "pereprava.storag
 version = { attr = "pereprava.__version__" }
 
 [tool.setuptools.package-data]
-pereprava = ["data/*.svg"]
+pereprava = ["data/*.svg", "data/CHANGELOG.md"]

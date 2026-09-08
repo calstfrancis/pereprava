@@ -1,30 +1,30 @@
-# Pereprava v0.7.3 "Clean Wake"
+# Pereprava v0.7.4 "Charted Passage"
 
-**Released:** 2026-09-07
+**Released:** 2026-09-08
 
 ## What's new
 
-A correctness fix for job deletion:
+A fix for the in-app Changelog viewer under the flatpak install:
 
-- **Deleting a periodic backup job could leave behind a phantom "unmanaged unit."**
-  Deletion only ever disabled the job's *timer* — its oneshot backup service is never
-  enabled itself, only started transiently by Run Now. If that service was still loaded
-  in systemd at delete time (still running, or just finished and not yet garbage-collected
-  — easy to hit by testing a freshly created job with Run Now and then deleting it within
-  the next few minutes), it outlived the deleted unit files and the job's own JSON. The
-  next scan then found a loaded unit with no matching job and flagged it under Needs
-  Attention as "isn't managed by Pereprava," even though Pereprava had created and run it
-  moments before. Deleting a job now also stops that service and clears any failed state,
-  so nothing is left behind to misreport.
+- **The Changelog window (opened from the `v0.7.4` status-bar button) showed nothing**
+  when running as a flatpak. It looked for `CHANGELOG.md` at a path that only resolves
+  for an editable/dev checkout — the flatpak installs the package normally, so that path
+  never existed and the window came up blank. `CHANGELOG.md` is now bundled into the
+  package itself (as a symlink back to the real file at the repo root, so it can never
+  drift out of sync), and the viewer falls back to that copy when the dev-checkout path
+  isn't there. If it somehow still can't find either copy, it now says so explicitly
+  instead of showing a blank window.
 
-If you already hit this before updating: use the **Remove** button on the stray entry
-under Needs Attention to clear it — no need to wait for the update first.
+If you're on the install-script distribution rather than the flatpak, this release has
+no user-visible effect — the editable-install path it falls back from was already
+working there.
 
-See [CHANGELOG.md](CHANGELOG.md) for everything since the last few releases, including
-v0.7.2 "True Marker" (fixed a stuck in-app version display), v0.7.1 "True Reading" (a
-stuck Run Condition status fix), v0.7.0 "Anchored Passage" (flatpak distribution), v0.6.2
-"Common Ground" (reliability fixes for invisible failures), v0.6.1 "Open Passage" (fixing
-a "needs repair" dead end), v0.6.0 "Still Waters" (background persistence, optional tray
+See [CHANGELOG.md](CHANGELOG.md) for everything since earlier releases, including
+v0.7.3 "Clean Wake" (fixed a deleted job reappearing as an unmanaged unit), v0.7.2
+"True Marker" (fixed a stuck in-app version number), v0.7.1 "True Reading" (a stuck Run
+Condition status fix), v0.7.0 "Anchored Passage" (flatpak distribution), v0.6.2 "Common
+Ground" (reliability fixes for invisible failures), v0.6.1 "Open Passage" (fixing a
+"needs repair" dead end), v0.6.0 "Still Waters" (background persistence, optional tray
 icon, a mount-point fix), v0.5.0 "Steady Current" (live transfer progress), and v0.4.0
 "Third Crossing" (`rclone check`, bandwidth limits, include/exclude filters, pre/post-run
 hooks, conditional scheduling, job duplication, one-click restore, per-job run history,
@@ -52,10 +52,10 @@ Already installed? `flatpak update` picks this up.
 ### Install script
 
 ```bash
-curl -L -o pereprava-0.7.3.tar.gz \
-  https://github.com/calstfrancis/pereprava/archive/refs/tags/v0.7.3.tar.gz
-tar xzf pereprava-0.7.3.tar.gz
-cd pereprava-0.7.3
+curl -L -o pereprava-0.7.4.tar.gz \
+  https://github.com/calstfrancis/pereprava/archive/refs/tags/v0.7.4.tar.gz
+tar xzf pereprava-0.7.4.tar.gz
+cd pereprava-0.7.4
 ./install.sh
 pereprava
 ```

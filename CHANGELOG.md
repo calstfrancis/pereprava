@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.4] "Charted Passage" — 2026-09-08
+
+### Fixed
+- The in-app Changelog viewer (opened from the `v{VERSION}` status-bar button) read
+  `CHANGELOG.md` via a path that only resolves in an editable/dev install — under the
+  flatpak, where the package is installed normally rather than checked out in place,
+  the file was never found and the window silently showed nothing useful. `CHANGELOG.md`
+  is now bundled into package data at build time (`pereprava/data/CHANGELOG.md`, a
+  symlink back to the root copy, matching Rubric's doc-symlink pattern so it can never
+  drift from the real file) and the viewer falls back to it when the editable-install
+  path doesn't exist. A missing-changelog state also now renders an explicit
+  "CHANGELOG.md not found" message instead of a blank window.
+
 ## [0.7.3] "Clean Wake" — 2026-09-07
 
 ### Fixed

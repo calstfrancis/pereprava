@@ -36,6 +36,12 @@ modules:
       - type: file
         path: io.github.calstfrancis.pereprava.metainfo.xml
     build-commands:
+      # pereprava/data/CHANGELOG.md is a symlink to the real CHANGELOG.md at the repo root
+      # (so the in-app changelog viewer can never drift from the actual file — see CLAUDE.md's
+      # "Version number -> changelog" UI standard) — dereference it into a real file first,
+      # since a symlink pointing outside the package dir isn't guaranteed to survive
+      # `pip install`'s file copying the way Rubric's equivalent doc-symlink dance handles it.
+      - rm -f pereprava/data/CHANGELOG.md && cp CHANGELOG.md pereprava/data/CHANGELOG.md
       - pip3 install --prefix=/app --no-build-isolation .
       - install -Dm644 io.github.calstfrancis.pereprava.desktop /app/share/applications/io.github.calstfrancis.pereprava.desktop
       - install -Dm644 pereprava/data/io.github.calstfrancis.pereprava.svg /app/share/icons/hicolor/scalable/apps/io.github.calstfrancis.pereprava.svg

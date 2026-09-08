@@ -13,7 +13,19 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk
 
-CHANGELOG_PATH = Path(__file__).resolve().parents[2] / "CHANGELOG.md"
+def _find_changelog() -> Path | None:
+    """Repo-root CHANGELOG.md (editable/dev installs, where __file__ resolves back
+    through the venv's symlink to the actual checkout) first; otherwise the copy
+    bundled into package data at build time (flatpak, or any non-editable pip
+    install — see pereprava/data/CHANGELOG.md and this app's flatpak manifest)."""
+    here = Path(__file__).resolve()
+    for candidate in (here.parents[2] / "CHANGELOG.md", here.parent.parent / "data" / "CHANGELOG.md"):
+        if candidate.exists():
+            return candidate
+    return None
+
+
+CHANGELOG_PATH = _find_changelog()
 
 # Long single-line labels don't reliably wrap via Gtk.Label's wrap/width-chars
 # properties in this environment (confirmed: natural width scales linearly with
@@ -177,9 +189,14 @@ def _build_body(changelog_text: str, current_version: str) -> Gtk.Widget:
 
 def show_changelog(parent: Gtk.Window, current_version: str) -> None:
     try:
-        text = CHANGELOG_PATH.read_text(encoding="utf-8")
+        text = CHANGELOG_PATH.read_text(encoding="utf-8") if CHANGELOG_PATH else ""
     except OSError:
-        text = "(CHANGELOG.md not found)"
+        text = ""
+    if not text.strip():
+        # Prefixed as a heading so _build_body actually renders it — a bare
+        # string doesn't match any of that parser's recognized line prefixes
+        # and would otherwise produce a silently blank window.
+        text = "### CHANGELOG.md not found"
 
     win = Adw.Window()
     win.set_title("Changelog — Pereprava")
