@@ -1,7 +1,7 @@
 """Run host binaries that don't live inside the flatpak sandbox.
 
 Pereprava is distributed both as a plain venv install (install.sh) and as a
-flatpak. `systemctl`, `systemd-analyze`, `loginctl`, `rclone`, and `rsync`
+flatpak. `systemctl`, `systemd-analyze`, `loginctl`, `rclone`, `rsync`, and `restic`
 aren't part of org.gnome.Platform, and systemd itself is a host daemon
 regardless of the GUI's sandbox — so every call to one of them is routed
 through `flatpak-spawn --host`, which asks the Flatpak portal to run it as a

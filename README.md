@@ -7,13 +7,14 @@ and lets you create/edit them through a form instead of hand-writing systemd uni
 
 **Safety first:** non-destructive `rclone copy` is the default job type. Anything that
 *can* delete files at its destination (`rclone sync`, `rclone bisync`, `rsync --delete`,
-or a custom command) is flagged loudly in the UI and requires an explicit
+a restic keep policy, or a custom command) is flagged loudly in the UI and requires an explicit
 acknowledgment before it can be saved.
 
 ## Features
 
 - **Job types:** `rclone copy`/`sync`/`bisync`, `rclone check` (verify source against
-  destination without transferring anything), `rsync`, a persistent `rclone mount`, or
+  destination without transferring anything), `rsync`, `restic` (encrypted snapshots, with an
+  optional keep policy that prunes old ones), a persistent `rclone mount`, or
   a custom command
 - **Filtering:** exclude and include glob patterns, applied in the order rclone/rsync
   see them
@@ -44,7 +45,7 @@ acknowledgment before it can be saved.
 - Python 3.10+
 - GTK4 and libadwaita with their GObject Introspection bindings (`python3-gobject` /
   `python-gobject` / distro equivalent) installed system-wide
-- `rclone` and/or `rsync`, whichever your jobs use — found via `PATH`, then
+- `rclone`, `rsync`, and/or `restic`, whichever your jobs use — found via `PATH`, then
   `~/.local/bin`, `/usr/local/bin`, and common Homebrew-on-Linux locations if not on
   `PATH` (resolved once, at launch)
 - FUSE (`/dev/fuse` + the `fuse`/`fuse3` package), if you use any `rclone mount` jobs
@@ -71,7 +72,7 @@ flatpak install calstfrancis io.github.calstfrancis.pereprava
 ```
 
 The flatpak build still manages real `systemd --user` units and calls `systemctl`,
-`rclone`, `rsync`, `systemd-analyze`, and `loginctl` on the host (via the Flatpak portal,
+`rclone`, `rsync`, `restic`, `systemd-analyze`, and `loginctl` on the host (via the Flatpak portal,
 `flatpak-spawn --host`) rather than bundling its own copies — a job's actual scheduled
 execution always runs as a normal host process via systemd regardless, sandbox or not — so
 your jobs, history, and logs are exactly the same ones a non-flatpak install would see. See

@@ -122,6 +122,25 @@ class JobFormDialog(Adw.Dialog):
         self._custom_command_row = Adw.EntryRow(title="Custom command (space-separated)")
         paths.add(self._custom_command_row)
 
+        self._restic_password_row = Adw.EntryRow(title="Restic password file")
+        self._restic_password_row.set_tooltip_text(
+            "A file containing the repository password (passed as --password-file). "
+            "The repository must already exist — create it once with `restic init`."
+        )
+        restic_pick = Gtk.Button(icon_name="document-open-symbolic")
+        restic_pick.set_valign(Gtk.Align.CENTER)
+        restic_pick.connect("clicked", self._pick_restic_password_file)
+        self._restic_password_row.add_suffix(restic_pick)
+        paths.add(self._restic_password_row)
+
+        self._restic_forget_row = Adw.EntryRow(title="Forget old snapshots (keep policy, optional)")
+        self._restic_forget_row.set_tooltip_text(
+            "e.g. --keep-daily 7 --keep-weekly 4 --keep-monthly 6 — after each successful "
+            "backup, runs `restic forget --prune` with these flags. Leave blank to keep everything."
+        )
+        self._restic_forget_row.connect("changed", lambda *_a: self._update_destructive_ui())
+        paths.add(self._restic_forget_row)
+
         self._excludes_row = Adw.EntryRow(
             title="Exclude folders/files (space-separated glob patterns)"
         )
@@ -325,6 +344,8 @@ class JobFormDialog(Adw.Dialog):
         self._ac_power_row.set_active(job.condition_ac_power)
         self._ssid_row.set_text(job.condition_ssid)
         self._rsync_delete_row.set_active(job.rsync_delete)
+        self._restic_password_row.set_text(job.restic_password_file)
+        self._restic_forget_row.set_text(job.restic_forget)
         self._log_path_row.set_text(job.log_path)
         preset = job.schedule.preset if job.schedule.preset in _PRESETS else "custom"
         self._preset_row.set_selected(_PRESETS.index(preset))
@@ -343,8 +364,11 @@ class JobFormDialog(Adw.Dialog):
         self._destination_row.set_visible(job_type != JobType.CUSTOM)
         self._custom_command_row.set_visible(job_type == JobType.CUSTOM)
         self._excludes_row.set_visible(job_type != JobType.CUSTOM)
-        self._includes_row.set_visible(job_type != JobType.CUSTOM)
-        self._bwlimit_row.set_visible(job_type != JobType.CUSTOM)
+        is_restic = job_type == JobType.RESTIC
+        self._restic_password_row.set_visible(is_restic)
+        self._restic_forget_row.set_visible(is_restic)
+        self._includes_row.set_visible(job_type not in (JobType.CUSTOM, JobType.RESTIC))
+        self._bwlimit_row.set_visible(job_type not in (JobType.CUSTOM, JobType.RESTIC))
         self._rc_progress_row.set_visible(job_type in RC_CAPABLE_TYPES)
         self._rsync_delete_row.set_visible(job_type == JobType.RSYNC)
         self._dest_browse_button.set_visible(job_type in _RCLONE_TYPES)
@@ -357,7 +381,9 @@ class JobFormDialog(Adw.Dialog):
         # buttons swap which row they appear on.
         self._source_row.set_title("Remote (e.g. pcloud:path)" if is_mount else "Source")
         self._destination_row.set_title(
-            "Mount point (local folder)" if is_mount else "Destination (remote:path or local path)"
+            "Mount point (local folder)" if is_mount
+            else "Repository (path, sftp:host:/path, or rclone:remote:path)" if is_restic
+            else "Destination (remote:path or local path)"
         )
         self._source_pick_button.set_visible(not is_mount)
         self._source_browse_button.set_visible(is_mount)
@@ -381,10 +407,20 @@ class JobFormDialog(Adw.Dialog):
             return False
         if job_type == JobType.RSYNC:
             return self._rsync_delete_row.get_active()
+        if job_type == JobType.RESTIC:
+            return bool(self._restic_forget_row.get_text().strip())
         return True  # sync, bisync, custom
 
     def _update_destructive_ui(self) -> None:
         destructive = self._is_destructive()
+        is_restic = self._selected_type() == JobType.RESTIC
+        self._safety_group.set_visible(
+            self._selected_type() not in _NEVER_DESTRUCTIVE_TYPES and (destructive or not is_restic)
+        )
+        self._destructive_banner.set_title(
+            "This job will permanently prune old snapshots from the repository"
+            if is_restic else "This job can delete files at the destination"
+        )
         self._destructive_banner.set_revealed(destructive)
         self._ack_row.set_visible(destructive)
         if not destructive:
@@ -406,6 +442,19 @@ class JobFormDialog(Adw.Dialog):
                 self._source_row.set_text(folder.get_path())
 
         dialog.select_folder(self.get_root(), None, on_response)
+
+    def _pick_restic_password_file(self, _button) -> None:
+        dialog = Gtk.FileDialog()
+
+        def on_response(dlg, result):
+            try:
+                file = dlg.open_finish(result)
+            except GLib.Error:
+                return
+            if file:
+                self._restic_password_row.set_text(file.get_path())
+
+        dialog.open(self.get_root(), None, on_response)
 
     def _pick_log_file(self, _button) -> None:
         dialog = Gtk.FileDialog()
@@ -592,8 +641,8 @@ class JobFormDialog(Adw.Dialog):
             destination=self._destination_row.get_text().strip(),
             extra_args=shlex.split(self._extra_args_row.get_text()),
             excludes=shlex.split(self._excludes_row.get_text()) if job_type != JobType.CUSTOM else [],
-            includes=shlex.split(self._includes_row.get_text()) if job_type != JobType.CUSTOM else [],
-            bwlimit=self._bwlimit_row.get_text().strip() if job_type != JobType.CUSTOM else "",
+            includes=shlex.split(self._includes_row.get_text()) if job_type not in (JobType.CUSTOM, JobType.RESTIC) else [],
+            bwlimit=self._bwlimit_row.get_text().strip() if job_type not in (JobType.CUSTOM, JobType.RESTIC) else "",
             rc_port=self._resolve_rc_port(job_type),
             pre_hook=self._pre_hook_row.get_text().strip(),
             post_hook=self._post_hook_row.get_text().strip(),
@@ -603,6 +652,8 @@ class JobFormDialog(Adw.Dialog):
             if job_type == JobType.CUSTOM
             else None,
             rsync_delete=self._rsync_delete_row.get_active(),
+            restic_password_file=self._restic_password_row.get_text().strip() if job_type == JobType.RESTIC else "",
+            restic_forget=self._restic_forget_row.get_text().strip() if job_type == JobType.RESTIC else "",
             schedule=Schedule(preset=preset, on_calendar=on_calendar),
             log_path=self._log_path_row.get_text().strip(),
             enabled=self._editing.enabled if self._editing else True,

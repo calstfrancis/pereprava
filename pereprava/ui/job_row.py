@@ -29,6 +29,7 @@ _TYPE_ICON = {
     JobType.RSYNC: "folder-symbolic",
     JobType.CUSTOM: "utilities-terminal-symbolic",
     JobType.RCLONE_MOUNT: "drive-harddisk-symbolic",
+    JobType.RESTIC: "drive-multidisk-symbolic",
 }
 
 _STATE_CSS = {

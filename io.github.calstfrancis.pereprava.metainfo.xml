@@ -58,6 +58,17 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.8.0" date="2026-09-29">
+      <description>
+        <p>"Sealed Ledger" — adds a restic job type.</p>
+        <ul>
+          <li>Back up to a restic repository (local, sftp, or rclone) with a password file,
+          exclude patterns, and a dry-run test.</li>
+          <li>Optional keep policy runs restic forget --prune after each successful backup;
+          jobs with one need the usual destructive-action acknowledgment.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.7.4" date="2026-09-08">
       <description>
         <p>"Charted Passage" — fixes the in-app changelog viewer showing nothing under the flatpak install.</p>

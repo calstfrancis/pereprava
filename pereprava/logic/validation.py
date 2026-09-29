@@ -27,6 +27,12 @@ def validate_job(job: Job, destructive_acknowledged: bool = False) -> list[str]:
         if not job.destination.strip():
             errors.append("Destination cannot be empty.")
 
+    if job.job_type == JobType.RESTIC:
+        if not job.restic_password_file.strip():
+            errors.append("Restic needs a password file.")
+        if job.restic_forget.strip() and "--keep-" not in job.restic_forget:
+            errors.append("Forget policy needs at least one --keep-* flag (e.g. --keep-daily 7).")
+
     if not job.log_path.strip():
         errors.append("Log path cannot be empty.")
 

@@ -16,6 +16,7 @@ class JobType(Enum):
     RSYNC = "rsync"
     CUSTOM = "custom"
     RCLONE_MOUNT = "rclone_mount"
+    RESTIC = "restic"
 
 
 # Human-facing labels, in the order they should appear in the job-type combo.
@@ -27,6 +28,7 @@ JOB_TYPE_LABELS: dict[JobType, str] = {
     JobType.RSYNC: "rsync",
     JobType.CUSTOM: "Custom command",
     JobType.RCLONE_MOUNT: "rclone mount (persistent mount point)",
+    JobType.RESTIC: "restic (encrypted, deduplicated snapshots)",
 }
 
 SCHEDULE_PRESETS: dict[str, str] = {
@@ -81,6 +83,8 @@ class Job:
     rc_port: int = 0  # >0 means rclone --rc live-progress is enabled on this port
     custom_command: list[str] | None = None
     rsync_delete: bool = False
+    restic_password_file: str = ""
+    restic_forget: str = ""  # keep-policy flags; non-empty runs `restic forget --prune` after each backup
     enabled: bool = True
     schema_version: int = SCHEMA_VERSION
 
@@ -89,7 +93,8 @@ class Job:
         """Whether this job can delete files at its destination.
 
         Derived from job_type, never a free-standing user-settable flag —
-        rclone copy structurally cannot delete, sync/bisync/custom always can.
+        rclone copy structurally cannot delete, sync/bisync/custom always can. A restic job is destructive only when
+        it has a forget policy, since that prunes old snapshots.
         A mount or a check doesn't copy/delete anything itself, so neither is
         ever destructive.
         """
@@ -97,6 +102,8 @@ class Job:
             return False
         if self.job_type == JobType.RSYNC:
             return self.rsync_delete
+        if self.job_type == JobType.RESTIC:
+            return bool(self.restic_forget.strip())
         # rclone_sync, rclone_bisync, custom
         return True
 
@@ -123,6 +130,8 @@ class Job:
             "rc_port": self.rc_port,
             "custom_command": self.custom_command,
             "rsync_delete": self.rsync_delete,
+            "restic_password_file": self.restic_password_file,
+            "restic_forget": self.restic_forget,
             "schedule": self.schedule.to_dict(),
             "log_path": self.log_path,
             "enabled": self.enabled,
@@ -147,6 +156,8 @@ class Job:
             rc_port=data.get("rc_port", 0),
             custom_command=data.get("custom_command"),
             rsync_delete=data.get("rsync_delete", False),
+            restic_password_file=data.get("restic_password_file", ""),
+            restic_forget=data.get("restic_forget", ""),
             schedule=Schedule.from_dict(data.get("schedule", {})),
             log_path=data["log_path"],
             enabled=data.get("enabled", True),

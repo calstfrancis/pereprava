@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.8.0] "Sealed Ledger" — 2026-09-29
+
+### Added
+- **A `restic` job type** for encrypted, deduplicated snapshots. Set the repository
+  (a local path, `sftp:host:/path`, or `rclone:remote:path`) as the destination, point
+  it at a password file, and Pereprava runs `restic backup` on the schedule you pick.
+  Exclude patterns and extra arguments work as for other jobs. The repository must
+  already exist (`restic init` once).
+- **Optional keep policy** (e.g. `--keep-daily 7 --keep-weekly 4`): after each
+  successful backup the job also runs `restic forget --prune` with those flags. Because
+  that permanently deletes old snapshots, a job with a keep policy is treated as
+  destructive and needs the usual acknowledgment before saving.
+- The form's **Test (dry run)** works for restic jobs (`restic backup --dry-run`).
+- Zarya's Backups card picks restic jobs up with no change on its side.
+
 ## [0.7.4] "Charted Passage" — 2026-09-08
 
 ### Fixed

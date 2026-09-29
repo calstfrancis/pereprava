@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import shlex
 
-from pereprava.logic.command import build_argv
+from pereprava.logic.command import build_argv, restic_forget_argv
 from pereprava.model.job import Job, JobType
 
 UNIT_PREFIX = "pereprava-job-"
@@ -76,6 +76,9 @@ def render_service_unit(job: Job) -> str:
     # Stock systemd semantics: ExecStartPost only runs if ExecStart succeeded.
     # A hook meant to run unconditionally needs its own error handling.
     post_hook_line = f"ExecStartPost={post_hook}\n" if post_hook else ""
+    forget_argv = restic_forget_argv(job)
+    if forget_argv:
+        post_hook_line = f"ExecStartPost={shlex.join(forget_argv)}\n" + post_hook_line
 
     if job.job_type == JobType.RCLONE_MOUNT:
         # Persistent, not a periodic oneshot: no timer, started/stopped directly

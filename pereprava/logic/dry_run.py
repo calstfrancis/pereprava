@@ -32,6 +32,7 @@ _DRY_RUN_SUPPORTED = {
     JobType.RCLONE_BISYNC,
     JobType.RCLONE_CHECK,
     JobType.RSYNC,
+    JobType.RESTIC,
 }
 
 

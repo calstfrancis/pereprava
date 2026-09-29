@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 from pereprava.logic.host_exec import host_file_exists, which
@@ -48,6 +49,7 @@ def _resolve_bin(name: str, default: str) -> str:
 
 RCLONE_BIN = _resolve_bin("rclone", "/usr/bin/rclone")
 RSYNC_BIN = _resolve_bin("rsync", "/usr/bin/rsync")
+RESTIC_BIN = _resolve_bin("restic", "/usr/bin/restic")
 
 
 def _exclude_flags(job: Job) -> list[str]:
@@ -90,6 +92,19 @@ def _filter_flags(job: Job) -> list[str]:
     return [*_exclude_flags(job), *_include_flags(job), *_bwlimit_flags(job), *_rc_flags(job)]
 
 
+def restic_forget_argv(job: Job) -> list[str] | None:
+    """`restic forget --prune <policy>` for a restic job with a keep policy;
+    None otherwise. Run as an ExecStartPost, so it only fires after a
+    successful backup."""
+    if job.job_type != JobType.RESTIC or not job.restic_forget.strip():
+        return None
+    return [
+        RESTIC_BIN, "-r", job.destination, "forget", "--prune",
+        "--password-file", job.restic_password_file,
+        *shlex.split(job.restic_forget),
+    ]
+
+
 def build_argv(job: Job) -> list[str]:
     """Build the full command argv for a job. Pure function — no side effects.
 
@@ -115,6 +130,15 @@ def build_argv(job: Job) -> list[str]:
         argv += _filter_flags(job)
         argv += [job.source, job.destination, *job.extra_args]
         return argv
+    if job.job_type == JobType.RESTIC:
+        # Repository is the destination; restic prints its own summary on
+        # stdout even off a terminal, so no -v is needed. No include/bwlimit
+        # flags: restic's filter and rate options differ from rclone's.
+        return [
+            RESTIC_BIN, "-r", job.destination, "backup",
+            "--password-file", job.restic_password_file,
+            *_exclude_flags(job), job.source, *job.extra_args,
+        ]
     if job.job_type == JobType.CUSTOM:
         return list(job.custom_command or [])
     if job.job_type == JobType.RCLONE_MOUNT:
